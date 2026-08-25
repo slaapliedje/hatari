@@ -51,6 +51,7 @@ const char MemorySnapShot_fileid[] = "Hatari memorySnapShot.c";
 #include "str.h"
 #include "stMemory.h"
 #include "scu_vme.h"
+#include "vme_nova.h"
 #include "tos.h"
 #include "screen.h"
 #include "video.h"
@@ -371,6 +372,7 @@ void MemorySnapShot_Capture_Do(void)
 		ConvGen_MemorySnapShot_Capture(true);
 		SCC_MemorySnapShot_Capture(true);
 		SCU_MemorySnapShot_Capture(true);
+		VME_MemorySnapShot_Capture(true);
 
 		/* end marker */
 		MemorySnapShot_Store(&magic, sizeof(magic));
@@ -467,6 +469,7 @@ void MemorySnapShot_Restore_Do(void)
 		ConvGen_MemorySnapShot_Capture(false);
 		SCC_MemorySnapShot_Capture(false);
 		SCU_MemorySnapShot_Capture(false);
+		VME_MemorySnapShot_Capture(false);
 
 		/* version string check catches release-to-release
 		 * state changes, bCaptureError catches too short
