@@ -192,6 +192,7 @@ static bool VME_ET4000_Decode ( uaecptr addr, uint32_t *pOffset, bool *pIsMem )
  * the ET4000 path and the framebuffer of the ATW800/2 is not swapped. */
 static uint8_t VME_ET4000_ReadByte ( uint32_t offset, bool is_mem )
 {
+	VmeReadCount++;
 	if ( is_mem )
 		return ET4000_Mem_ReadByte ( offset );
 	return ET4000_IO_ReadByte ( offset );
@@ -199,6 +200,7 @@ static uint8_t VME_ET4000_ReadByte ( uint32_t offset, bool is_mem )
 
 static void VME_ET4000_WriteByte ( uint32_t offset, bool is_mem, uint8_t val )
 {
+	VmeWriteCount++;
 	if ( is_mem )
 		ET4000_Mem_WriteByte ( offset, val );
 	else
@@ -456,6 +458,8 @@ void VME_Info ( FILE *fp, uint32_t arg )
 	 case VME_TYPE_ET4000:
 		fprintf(fp, "VME card emulation: Nova/ET4000 (regs at A24 0x%06x, mem at A24 0x%06x)\n",
 		        VME_NOVA_REG_BASE, VME_NOVA_MEM_BASE);
+		fprintf(fp, "VME accesses since reset: %llu reads, %llu writes\n",
+		        (unsigned long long)VmeReadCount, (unsigned long long)VmeWriteCount);
 		ET4000_Info ( fp, arg );
 		break;
 	 default:
