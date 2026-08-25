@@ -394,7 +394,8 @@ typedef enum
 typedef enum
 {
   VME_TYPE_NONE,                  /* VME windows return bus errors */
-  VME_TYPE_TRACE                  /* RAM-backed VME windows, all accesses traced */
+  VME_TYPE_TRACE,                 /* RAM-backed VME windows, all accesses traced */
+  VME_TYPE_ET4000                 /* Nova/ET4000 graphics card */
 } VMETYPE;
 
 typedef struct

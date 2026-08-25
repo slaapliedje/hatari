@@ -499,7 +499,7 @@ static const opt_t HatariOptions[] = {
 	{ OPT_DSP,       NULL, "--dsp",
 	  "<x>", "DSP emulation (x = none/dummy/emu, Falcon only)" },
 	{ OPT_VME,       NULL, "--vme",
-	  "<x>", "VME card emulation (x = none/trace, MegaSTE/TT only)" },
+	  "<x>", "VME card emulation (x = none/trace/et4000, MegaSTE/TT only)" },
 	{ OPT_RTC_YEAR,   NULL, "--rtc-year",
 	  "<int>", "Set initial year for RTC (0/1980-2079, 0=use host)" },
 	{ OPT_TIMERD,    NULL, "--timer-d",
@@ -2159,9 +2159,10 @@ bool Opt_ParseParameters(int argc, const char * const argv[], int *exitval)
 		case OPT_VME:
 		{
 			static const opt_keyval_t keyval[] = {
-				{"none",  VME_TYPE_NONE},
-				{"off",   VME_TYPE_NONE},
-				{"trace", VME_TYPE_TRACE},
+				{"none",   VME_TYPE_NONE},
+				{"off",    VME_TYPE_NONE},
+				{"trace",  VME_TYPE_TRACE},
+				{"et4000", VME_TYPE_ET4000},
 			};
 			if (!Opt_SetKeyVal(arg, keyval, ARRAY_SIZE(keyval), &val))
 			{
