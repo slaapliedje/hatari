@@ -37,6 +37,7 @@ const char VmeNova_fileid[] = "Hatari vme_nova.c";
 #include "log.h"
 #include "m68000.h"
 #include "memorySnapShot.h"
+#include "video_et4000.h"
 #include "vme_nova.h"
 
 
@@ -49,6 +50,16 @@ const char VmeNova_fileid[] = "Hatari vme_nova.c";
 #define VME_A16_START_TT	0xFEFF0000
 #define VME_A16_START_MEGASTE	0x00DF0000
 #define VME_A16_END_MEGASTE	0x00E00000
+
+/* Nova/ET4000 VME adapter address decode (MegaSTE and TT layout, the one
+   EmuTOS calls "Nova/ET4000 in Atari MegaSTe or TT"): the ET4000's ISA I/O
+   ports appear at A24 0xDC0000 + port, the video memory as a linear 1 MB
+   window at A24 0xC00000. Everything else on the bus stays bus-error, which
+   the drivers' probe loops rely on. */
+#define VME_NOVA_REG_BASE	0x00DC0000
+#define VME_NOVA_REG_SIZE	0x00010000
+#define VME_NOVA_MEM_BASE	0x00C00000
+#define VME_NOVA_MEM_SIZE	0x00100000
 
 static uint8_t	*pVmeA24Ram;			/* RAM image of the A24 space (trace mode) */
 static uint8_t	*pVmeA16Ram;			/* RAM image of the A16 space (trace mode) */
@@ -76,6 +87,12 @@ void	VME_Init ( void )
 	if ( !VME_IsAvailable() )
 		return;
 
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	{
+		ET4000_Init ();
+		return;
+	}
+
 	if ( !pVmeA24Ram )
 	{
 		pVmeA24Ram = malloc ( VME_A24_SIZE );
@@ -101,6 +118,7 @@ void	VME_UnInit ( void )
 	pVmeA24Ram = NULL;
 	free ( pVmeA16Ram );
 	pVmeA16Ram = NULL;
+	ET4000_UnInit ();
 }
 
 
@@ -115,6 +133,9 @@ void	VME_Reset ( bool bCold )
 
 	VmeReadCount = 0;
 	VmeWriteCount = 0;
+
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+		ET4000_Reset ( bCold );
 }
 
 
@@ -141,6 +162,51 @@ static uint8_t	*VME_DecodeAddr ( uaecptr addr, uint32_t *pVmeAddr, const char **
 
 
 /**
+ * Nova/ET4000 card decode: map a CPU address inside the VME windows onto
+ * the card's register file or memory window. Returns false when no card
+ * hardware responds there (-> bus error, like on the real bus).
+ */
+static bool VME_ET4000_Decode ( uaecptr addr, uint32_t *pOffset, bool *pIsMem )
+{
+	uint32_t addr24 = addr & 0x00ffffff;
+
+	if ( addr24 >= VME_NOVA_MEM_BASE && addr24 < VME_NOVA_MEM_BASE + VME_NOVA_MEM_SIZE )
+	{
+		*pIsMem = true;
+		*pOffset = addr24 - VME_NOVA_MEM_BASE;
+		return true;
+	}
+	if ( addr24 >= VME_NOVA_REG_BASE && addr24 < VME_NOVA_REG_BASE + VME_NOVA_REG_SIZE )
+	{
+		*pIsMem = false;
+		*pOffset = addr24 & 0xffff;
+		return true;
+	}
+	return false;
+}
+
+/* Byte-wide card access helpers. Word accesses are split high byte first :
+ * whether the real Nova adapter swaps the byte lanes on 16 bit transfers
+ * (EmuTOS notes it does for register accesses) is to be settled with a
+ * real driver trace in phase 3 ; EmuTOS itself only does byte accesses on
+ * the ET4000 path and the framebuffer of the ATW800/2 is not swapped. */
+static uint8_t VME_ET4000_ReadByte ( uint32_t offset, bool is_mem )
+{
+	if ( is_mem )
+		return ET4000_Mem_ReadByte ( offset );
+	return ET4000_IO_ReadByte ( offset );
+}
+
+static void VME_ET4000_WriteByte ( uint32_t offset, bool is_mem, uint8_t val )
+{
+	if ( is_mem )
+		ET4000_Mem_WriteByte ( offset, val );
+	else
+		ET4000_IO_WriteByte ( offset, val );
+}
+
+
+/**
  * Read / write handlers for the VME windows, hooked into the memory
  * banks in cpu/memory.c. The bus is D16 : the CPU splits long accesses
  * into 2 word cycles itself, so no extra handling is needed here.
@@ -149,8 +215,24 @@ uae_u32 REGPARAM3 VME_Mem_bget ( uaecptr addr )
 {
 	uint32_t VmeAddr;
 	const char *space;
-	uint8_t *p = VME_DecodeAddr ( addr, &VmeAddr, &space );
-	uint8_t val = p[0];
+	uint8_t *p;
+	uint8_t val;
+
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	{
+		uint32_t offset;
+		bool is_mem;
+
+		if ( !VME_ET4000_Decode ( addr, &offset, &is_mem ) )
+		{
+			M68000_BusError ( addr, BUS_ERROR_READ, BUS_ERROR_SIZE_BYTE, BUS_ERROR_ACCESS_DATA, 0 );
+			return -1;
+		}
+		return VME_ET4000_ReadByte ( offset, is_mem );
+	}
+
+	p = VME_DecodeAddr ( addr, &VmeAddr, &space );
+	val = p[0];
 
 	VmeReadCount++;
 	LOG_TRACE(TRACE_VME, "vme %s rd.b $%06x val=0x%02x pc=%x\n", space, VmeAddr, val, M68000_GetPC());
@@ -161,8 +243,25 @@ uae_u32 REGPARAM3 VME_Mem_wget ( uaecptr addr )
 {
 	uint32_t VmeAddr;
 	const char *space;
-	uint8_t *p = VME_DecodeAddr ( addr, &VmeAddr, &space );
-	uint16_t val = ( p[0] << 8 ) | p[1];
+	uint8_t *p;
+	uint16_t val;
+
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	{
+		uint32_t offset;
+		bool is_mem;
+
+		if ( !VME_ET4000_Decode ( addr, &offset, &is_mem ) )
+		{
+			M68000_BusError ( addr, BUS_ERROR_READ, BUS_ERROR_SIZE_WORD, BUS_ERROR_ACCESS_DATA, 0 );
+			return -1;
+		}
+		return ( VME_ET4000_ReadByte ( offset, is_mem ) << 8 )
+		       | VME_ET4000_ReadByte ( offset + 1, is_mem );
+	}
+
+	p = VME_DecodeAddr ( addr, &VmeAddr, &space );
+	val = ( p[0] << 8 ) | p[1];
 
 	VmeReadCount++;
 	LOG_TRACE(TRACE_VME, "vme %s rd.w $%06x val=0x%04x pc=%x\n", space, VmeAddr, val, M68000_GetPC());
@@ -173,8 +272,27 @@ uae_u32 REGPARAM3 VME_Mem_lget ( uaecptr addr )
 {
 	uint32_t VmeAddr;
 	const char *space;
-	uint8_t *p = VME_DecodeAddr ( addr, &VmeAddr, &space );
-	uint32_t val = ( (uint32_t)p[0] << 24 ) | ( p[1] << 16 ) | ( p[2] << 8 ) | p[3];
+	uint8_t *p;
+	uint32_t val;
+
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	{
+		uint32_t offset;
+		bool is_mem;
+
+		if ( !VME_ET4000_Decode ( addr, &offset, &is_mem ) )
+		{
+			M68000_BusError ( addr, BUS_ERROR_READ, BUS_ERROR_SIZE_LONG, BUS_ERROR_ACCESS_DATA, 0 );
+			return -1;
+		}
+		return ( (uint32_t)VME_ET4000_ReadByte ( offset, is_mem ) << 24 )
+		       | ( VME_ET4000_ReadByte ( offset + 1, is_mem ) << 16 )
+		       | ( VME_ET4000_ReadByte ( offset + 2, is_mem ) << 8 )
+		       | VME_ET4000_ReadByte ( offset + 3, is_mem );
+	}
+
+	p = VME_DecodeAddr ( addr, &VmeAddr, &space );
+	val = ( (uint32_t)p[0] << 24 ) | ( p[1] << 16 ) | ( p[2] << 8 ) | p[3];
 
 	VmeReadCount++;
 	LOG_TRACE(TRACE_VME, "vme %s rd.l $%06x val=0x%08x pc=%x\n", space, VmeAddr, val, M68000_GetPC());
@@ -185,8 +303,23 @@ void REGPARAM3 VME_Mem_bput ( uaecptr addr, uae_u32 val )
 {
 	uint32_t VmeAddr;
 	const char *space;
-	uint8_t *p = VME_DecodeAddr ( addr, &VmeAddr, &space );
+	uint8_t *p;
 
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	{
+		uint32_t offset;
+		bool is_mem;
+
+		if ( !VME_ET4000_Decode ( addr, &offset, &is_mem ) )
+		{
+			M68000_BusError ( addr, BUS_ERROR_WRITE, BUS_ERROR_SIZE_BYTE, BUS_ERROR_ACCESS_DATA, val );
+			return;
+		}
+		VME_ET4000_WriteByte ( offset, is_mem, val );
+		return;
+	}
+
+	p = VME_DecodeAddr ( addr, &VmeAddr, &space );
 	p[0] = val;
 	VmeWriteCount++;
 	LOG_TRACE(TRACE_VME, "vme %s wr.b $%06x val=0x%02x pc=%x\n", space, VmeAddr, (uint8_t)val, M68000_GetPC());
@@ -196,8 +329,24 @@ void REGPARAM3 VME_Mem_wput ( uaecptr addr, uae_u32 val )
 {
 	uint32_t VmeAddr;
 	const char *space;
-	uint8_t *p = VME_DecodeAddr ( addr, &VmeAddr, &space );
+	uint8_t *p;
 
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	{
+		uint32_t offset;
+		bool is_mem;
+
+		if ( !VME_ET4000_Decode ( addr, &offset, &is_mem ) )
+		{
+			M68000_BusError ( addr, BUS_ERROR_WRITE, BUS_ERROR_SIZE_WORD, BUS_ERROR_ACCESS_DATA, val );
+			return;
+		}
+		VME_ET4000_WriteByte ( offset, is_mem, val >> 8 );
+		VME_ET4000_WriteByte ( offset + 1, is_mem, val );
+		return;
+	}
+
+	p = VME_DecodeAddr ( addr, &VmeAddr, &space );
 	p[0] = val >> 8;
 	p[1] = val;
 	VmeWriteCount++;
@@ -208,8 +357,26 @@ void REGPARAM3 VME_Mem_lput ( uaecptr addr, uae_u32 val )
 {
 	uint32_t VmeAddr;
 	const char *space;
-	uint8_t *p = VME_DecodeAddr ( addr, &VmeAddr, &space );
+	uint8_t *p;
 
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	{
+		uint32_t offset;
+		bool is_mem;
+
+		if ( !VME_ET4000_Decode ( addr, &offset, &is_mem ) )
+		{
+			M68000_BusError ( addr, BUS_ERROR_WRITE, BUS_ERROR_SIZE_LONG, BUS_ERROR_ACCESS_DATA, val );
+			return;
+		}
+		VME_ET4000_WriteByte ( offset, is_mem, val >> 24 );
+		VME_ET4000_WriteByte ( offset + 1, is_mem, val >> 16 );
+		VME_ET4000_WriteByte ( offset + 2, is_mem, val >> 8 );
+		VME_ET4000_WriteByte ( offset + 3, is_mem, val );
+		return;
+	}
+
+	p = VME_DecodeAddr ( addr, &VmeAddr, &space );
 	p[0] = val >> 24;
 	p[1] = val >> 16;
 	p[2] = val >> 8;
@@ -225,8 +392,12 @@ int REGPARAM3 VME_Mem_check ( uaecptr addr, uae_u32 size )
 
 uae_u8 * REGPARAM3 VME_Mem_xlate ( uaecptr addr )
 {
+	static uint8_t dummy[4];
 	uint32_t VmeAddr;
 	const char *space;
+
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 || !pVmeA24Ram )
+		return dummy;				/* no direct/executable access to the card */
 
 	return VME_DecodeAddr ( addr, &VmeAddr, &space );
 }
@@ -243,6 +414,8 @@ void	VME_MemorySnapShot_Capture ( bool bSave )
 	MemorySnapShot_Store(&VmeReadCount, sizeof(VmeReadCount));
 	MemorySnapShot_Store(&VmeWriteCount, sizeof(VmeWriteCount));
 	MemorySnapShot_Store(&bAllocated, sizeof(bAllocated));
+
+	ET4000_MemorySnapShot_Capture ( bSave );
 
 	if ( !bAllocated )
 		return;
@@ -279,6 +452,11 @@ void VME_Info ( FILE *fp, uint32_t arg )
 		fprintf(fp, "VME card emulation: trace (RAM-backed windows, log with --trace vme)\n");
 		fprintf(fp, "VME accesses since reset: %llu reads, %llu writes\n",
 		        (unsigned long long)VmeReadCount, (unsigned long long)VmeWriteCount);
+		break;
+	 case VME_TYPE_ET4000:
+		fprintf(fp, "VME card emulation: Nova/ET4000 (regs at A24 0x%06x, mem at A24 0x%06x)\n",
+		        VME_NOVA_REG_BASE, VME_NOVA_MEM_BASE);
+		ET4000_Info ( fp, arg );
 		break;
 	 default:
 		fprintf(fp, "VME card emulation: unknown type %d\n", ConfigureParams.System.nVMEType);

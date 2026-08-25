@@ -43,6 +43,7 @@
 #include "statusbar.h"
 #include "vdi.h"
 #include "video.h"
+#include "video_et4000.h"
 #include "falcon/videl.h"
 
 #define DEBUG 0
@@ -405,6 +406,13 @@ void ConvST_SetFullUpdate(void)
  */
 void ConvST_Refresh(bool force_flip)
 {
+	if (ET4000_UseCardScreen())
+	{
+		/* A Nova/ET4000 VME card is set up and unblanked: the Hatari
+		 * window shows the card output instead of the internal video */
+		ET4000_Render();
+		return;
+	}
 	if (bUseVDIRes)
 	{
 		ConvGen_Draw(VideoBase, VDIWidth, VDIHeight, VDIPlanes,
