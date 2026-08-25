@@ -535,6 +535,14 @@ Enable blitter emulation (ST only)
 .B \-\-dsp <x>
 Falcon DSP emulation (x = none, dummy or emu, Falcon only)
 .TP
+.B \-\-vme <x>
+VME expansion card emulation (x = none or trace, MegaSTE/TT only).
+With "none" the VME bus address windows return bus errors as on a
+machine without a card.  With "trace" the windows are backed by RAM
+and every access can be logged with the "vme" trace flag (see
+"\-\-trace"), which is useful to reverse engineer what addresses a
+VME card driver expects to reach.
+.TP
 .B \-\-rtc\-year <int>
 With the default value 0, RTC date and time are taken from the host.
 If application does not handle current dates, this can be used to

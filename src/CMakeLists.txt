@@ -55,6 +55,7 @@ set(SOURCES
 	scc.c
 	screenSnapShot.c
 	scu_vme.c
+	vme_nova.c
 	shortcut.c
 	sound.c
 	spec512.c
