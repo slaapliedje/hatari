@@ -163,6 +163,8 @@ static flagname_t TraceFlags[] = {
 	{ TRACE_VIDEO_SYNC	 , "video_sync" },
 	{ TRACE_VIDEO_VBL	 , "video_vbl" },
 
+	{ TRACE_VME		 , "vme" },
+
 	{ TRACE_OS_XBIOS	 , "xbios" },
 };
 #endif /* ENABLE_TRACING */

@@ -196,6 +196,8 @@ enum {
 	TRACE_BIT_VIDEO_SYNC,
 	TRACE_BIT_VIDEO_VBL,
 
+	TRACE_BIT_VME,
+
 	TRACE_BIT_EVENT_ACTION
 };
 
@@ -282,6 +284,8 @@ enum {
 #define TRACE_VIDEO_STE          (1ll<<TRACE_BIT_VIDEO_STE)
 #define TRACE_VIDEO_SYNC         (1ll<<TRACE_BIT_VIDEO_SYNC)
 #define TRACE_VIDEO_VBL          (1ll<<TRACE_BIT_VIDEO_VBL)
+
+#define TRACE_VME                (1ll<<TRACE_BIT_VME)
 
 #define TRACE_EVENT_ACTION       (1ll<<TRACE_BIT_EVENT_ACTION)
 

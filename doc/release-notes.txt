@@ -46,6 +46,9 @@ Emulation improvements:
     There is no support for CTR images, and the code might have problems
     with certain disk images, i.e. it is recommended to still use the
     original capslib in case of problems.
+- VME (MegaSTE and TT):
+  - "--vme trace" backs the VME windows with RAM and logs the accesses
+    with the new "vme" trace flag, to see what a card's driver does
 
 Emulator improvements:
 - CLI options:

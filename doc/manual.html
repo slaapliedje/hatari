@@ -206,7 +206,7 @@ common to all (FDC, IKBD, MFP, MIDI, PSG, RS-232...).</p>
     <tr>
       <td class="hwfeat">VME bus</td>
       <td></td><td></td><td></td><td>X</td><td>X</td><td></td>
-      <td class="hwnote">Although SCU registers are emulated, this expansion bus is not supported by Hatari</td>
+      <td class="hwnote">SCU registers are emulated. No cards are emulated yet, but &quot;--vme trace&quot; shows what a driver does on the bus</td>
     </tr>
   </tbody>
   <tfoot>
@@ -1059,6 +1059,13 @@ megaste, tt or falcon)</p>
 <p class="parameter">--blitter
 &lt;bool&gt;</p>
 <p class="paramdesc">Enable blitter emulation (ST only)</p>
+<p class="parameter">--vme &lt;x&gt;</p>
+<p class="paramdesc">VME expansion card emulation (x = none or trace,
+MegaSTE/TT only). With &quot;none&quot; the VME bus address windows return
+bus errors as on a machine without a card. With &quot;trace&quot; the windows
+are backed by RAM and every access can be logged with the &quot;vme&quot;
+trace flag, which is useful to find out what a VME card driver expects
+to reach.</p>
 <p class="parameter">--rtc-year &lt;int&gt;</p>
 <p class="paramdesc">With the default value 0, RTC date and time are
 taken from the host. If application does not handle current dates,
