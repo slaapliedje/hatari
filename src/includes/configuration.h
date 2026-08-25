@@ -391,6 +391,12 @@ typedef enum
   VIDEO_TIMING_MODE_WS4,
 } VIDEOTIMINGMODE;
 
+typedef enum
+{
+  VME_TYPE_NONE,                  /* VME windows return bus errors */
+  VME_TYPE_TRACE                  /* RAM-backed VME windows, all accesses traced */
+} VMETYPE;
+
 typedef struct
 {
   int nCpuLevel;
@@ -405,6 +411,7 @@ typedef struct
   bool bFastForward;
   bool bAddressSpace24;           /* true if using a 24-bit address bus */
   VIDEOTIMINGMODE VideoTimingMode;
+  VMETYPE nVMEType;               /* VME card emulation (MegaSTE and TT only) */
 
   bool bCycleExactCpu;
   bool bCpuDataCache;

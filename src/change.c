@@ -173,6 +173,10 @@ bool Change_DoNeedReset(CNF_PARAMS *current, CNF_PARAMS *changed)
 	if (current->Midi.bEnableMidi != changed->Midi.bEnableMidi)
 		return true;
 
+	/* Did change VME card emulation? */
+	if (changed->System.nVMEType != current->System.nVMEType)
+		return true;
+
 	return false;
 }
 

@@ -198,6 +198,7 @@ typedef enum {
 	OPT_MACHINE,		/* system options */
 	OPT_BLITTER,
 	OPT_DSP,
+	OPT_VME,
 	OPT_RTC_YEAR,
 	OPT_TIMERD,
 	OPT_FASTBOOT,
@@ -497,6 +498,8 @@ static const opt_t HatariOptions[] = {
 	  "<bool>", "Use blitter emulation (ST only)" },
 	{ OPT_DSP,       NULL, "--dsp",
 	  "<x>", "DSP emulation (x = none/dummy/emu, Falcon only)" },
+	{ OPT_VME,       NULL, "--vme",
+	  "<x>", "VME card emulation (x = none/trace, MegaSTE/TT only)" },
 	{ OPT_RTC_YEAR,   NULL, "--rtc-year",
 	  "<int>", "Set initial year for RTC (0/1980-2079, 0=use host)" },
 	{ OPT_TIMERD,    NULL, "--timer-d",
@@ -2149,6 +2152,22 @@ bool Opt_ParseParameters(int argc, const char * const argv[], int *exitval)
 			}
 #endif
 			ConfigureParams.System.nDSPType = val;
+			bLoadAutoSave = false;
+			break;
+		}
+
+		case OPT_VME:
+		{
+			static const opt_keyval_t keyval[] = {
+				{"none",  VME_TYPE_NONE},
+				{"off",   VME_TYPE_NONE},
+				{"trace", VME_TYPE_TRACE},
+			};
+			if (!Opt_SetKeyVal(arg, keyval, ARRAY_SIZE(keyval), &val))
+			{
+				return Opt_ShowError(OPT_VME, arg, "Unknown VME card type");
+			}
+			ConfigureParams.System.nVMEType = val;
 			bLoadAutoSave = false;
 			break;
 		}

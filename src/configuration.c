@@ -572,6 +572,7 @@ static const struct Config_Tag configs_System[] =
 	{ "bSoftFloatFPU", Bool_Tag, &ConfigureParams.System.bSoftFloatFPU },
 	{ "bMMU", Bool_Tag, &ConfigureParams.System.bMMU },
 	{ "VideoTiming", Int_Tag, &ConfigureParams.System.VideoTimingMode },
+	{ "nVMEType", Int_Tag, &ConfigureParams.System.nVMEType },
 	{ NULL , Error_Tag, NULL }
 };
 
@@ -841,6 +842,7 @@ void Configuration_SetDefault(void)
 	ConfigureParams.System.bCpuDataCache = true;
 	ConfigureParams.System.bCycleExactCpu = true;
 	ConfigureParams.System.VideoTimingMode = VIDEO_TIMING_MODE_WS3;
+	ConfigureParams.System.nVMEType = VME_TYPE_NONE;
 	ConfigureParams.System.bCompatibleCpu = true;
 	ConfigureParams.System.bBlitter = false;
 	ConfigureParams.System.bPatchTimerD = false;
