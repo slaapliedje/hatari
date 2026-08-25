@@ -33,6 +33,7 @@ const char DlgSystem_fileid[] = "Hatari dlgSystem.c";
 #define DLGSYS_FASTBOOT   24
 #define DLGSYS_VMENONE    27
 #define DLGSYS_VMETRACE   28
+#define DLGSYS_VMEET4000  29
 
 
 static SGOBJ systemdlg[] =
@@ -71,6 +72,7 @@ static SGOBJ systemdlg[] =
 	{ SGTEXT, 0, 0, 3,16, 32,1, "VME card (Mega STE and TT only):" },
 	{ SGRADIOBUT, 0, 0, 3,18, 9,1, "N_o card" },
 	{ SGRADIOBUT, 0, 0, 14,18, 7,1, "Tra_ce" },
+	{ SGRADIOBUT, 0, 0, 23,18, 13,1, "No_va/ET4000" },
 
 	{ SGBUTTON, SG_DEFAULT, 0, 16,21, 20,1, "Back to main menu" },
 	{ SGSTOP, 0, 0, 0,0, 0,0, NULL }
@@ -134,7 +136,7 @@ void DlgSystem_Main(void)
 		systemdlg[DLGSYS_FASTBOOT].state &= ~SG_SELECTED;
 
 	/* VME card */
-	for (i = DLGSYS_VMENONE; i <= DLGSYS_VMETRACE; i++)
+	for (i = DLGSYS_VMENONE; i <= DLGSYS_VMEET4000; i++)
 	{
 		systemdlg[i].state &= ~SG_SELECTED;
 	}
@@ -170,7 +172,7 @@ void DlgSystem_Main(void)
 		}
 	}
 
-	for (i = DLGSYS_VMENONE; i <= DLGSYS_VMETRACE; i++)
+	for (i = DLGSYS_VMENONE; i <= DLGSYS_VMEET4000; i++)
 	{
 		if (systemdlg[i].state & SG_SELECTED)
 		{

@@ -206,7 +206,7 @@ common to all (FDC, IKBD, MFP, MIDI, PSG, RS-232...).</p>
     <tr>
       <td class="hwfeat">VME bus</td>
       <td></td><td></td><td></td><td>X</td><td>X</td><td></td>
-      <td class="hwnote">SCU registers are emulated. No cards are emulated yet, but &quot;--vme trace&quot; shows what a driver does on the bus</td>
+      <td class="hwnote">SCU registers are emulated. A Nova/ET4000 graphics card can be emulated with &quot;--vme et4000&quot;</td>
     </tr>
   </tbody>
   <tfoot>
@@ -1060,12 +1060,15 @@ megaste, tt or falcon)</p>
 &lt;bool&gt;</p>
 <p class="paramdesc">Enable blitter emulation (ST only)</p>
 <p class="parameter">--vme &lt;x&gt;</p>
-<p class="paramdesc">VME expansion card emulation (x = none or trace,
+<p class="paramdesc">VME expansion card emulation (x = none, trace or et4000,
 MegaSTE/TT only). With &quot;none&quot; the VME bus address windows return
 bus errors as on a machine without a card. With &quot;trace&quot; the windows
 are backed by RAM and every access can be logged with the &quot;vme&quot;
 trace flag, which is useful to find out what a VME card driver expects
-to reach.</p>
+to reach. With &quot;et4000&quot; a Nova/ET4000 graphics card is emulated
+(ISA registers at A24 0xDC0000, 1 MB linear video memory at A24 0xC00000);
+once a Nova driver (or EmuTOS's built-in Nova support) initialises the card,
+the Hatari window shows the card output instead of the internal video.</p>
 <p class="parameter">--rtc-year &lt;int&gt;</p>
 <p class="paramdesc">With the default value 0, RTC date and time are
 taken from the host. If application does not handle current dates,
@@ -1432,7 +1435,9 @@ changes that you have made.
  The VME card option selects what is in the VME slot of a Mega-STE or TT.
  Other machines have no VME bus and ignore it.  &quot;Trace&quot; is no real
  card: RAM stands behind the VME windows, and the &quot;vme&quot; trace flag
- logs what a driver does there.
+ logs what a driver does there.  &quot;Nova/ET4000&quot; is a graphics card:
+ once a driver, or EmuTOS's built-in Nova support, initialises it, the
+ Hatari window shows the card output instead of the internal video.
 </p>
 <p>
  <em>NOTE:</em> The emulated Atari system is very very sensitive to all of

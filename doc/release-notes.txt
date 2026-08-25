@@ -49,6 +49,7 @@ Emulation improvements:
 - VME (MegaSTE and TT):
   - "--vme trace" backs the VME windows with RAM and logs the accesses
     with the new "vme" trace flag, to see what a card's driver does
+  - "--vme et4000" emulates a Nova/ET4000 graphics card
 
 Emulator improvements:
 - CLI options:

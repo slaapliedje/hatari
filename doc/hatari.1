@@ -536,12 +536,16 @@ Enable blitter emulation (ST only)
 Falcon DSP emulation (x = none, dummy or emu, Falcon only)
 .TP
 .B \-\-vme <x>
-VME expansion card emulation (x = none or trace, MegaSTE/TT only).
-With "none" the VME bus address windows return bus errors as on a
-machine without a card.  With "trace" the windows are backed by RAM
+VME expansion card emulation (x = none, trace or et4000, MegaSTE/TT
+only).  With "none" the VME bus address windows return bus errors as on
+a machine without a card.  With "trace" the windows are backed by RAM
 and every access can be logged with the "vme" trace flag (see
 "\-\-trace"), which is useful to reverse engineer what addresses a
-VME card driver expects to reach.
+VME card driver expects to reach.  With "et4000" a Nova/ET4000 graphics
+card is emulated (ISA registers at A24 0xDC0000, 1 MB linear video
+memory at A24 0xC00000); once a Nova driver (or EmuTOS's built-in Nova
+support) initialises the card, the Hatari window shows the card output
+instead of the internal video.
 .TP
 .B \-\-rtc\-year <int>
 With the default value 0, RTC date and time are taken from the host.

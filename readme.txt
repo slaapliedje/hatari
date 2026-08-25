@@ -54,6 +54,10 @@ nor the purpose of the library (accessing .ipf or .ctr disk images) was changed.
 You may copy and distribute such a system following the terms of the GNU GPL
 for Hatari and the licenses of the other code concerned.
 
+src/video_et4000.c derives from PCem and is licensed under version 2 of the
+GPL only, so Hatari as a whole, built with it, can be distributed under
+version 2 only.
+
 
  2) What is Hatari?
  ------------------
