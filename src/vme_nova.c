@@ -39,6 +39,7 @@ const char VmeNova_fileid[] = "Hatari vme_nova.c";
 #include "m68000.h"
 #include "memorySnapShot.h"
 #include "video_et4000.h"
+#include "vme_atw800.h"
 #include "vme_nova.h"
 
 
@@ -93,6 +94,11 @@ void	VME_Init ( void )
 		ET4000_Init ();
 		return;
 	}
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ATW800 )
+	{
+		ATW800_Init ();
+		return;
+	}
 
 	if ( !pVmeA24Ram )
 	{
@@ -120,6 +126,7 @@ void	VME_UnInit ( void )
 	free ( pVmeA16Ram );
 	pVmeA16Ram = NULL;
 	ET4000_UnInit ();
+	ATW800_UnInit ();
 }
 
 
@@ -137,6 +144,8 @@ void	VME_Reset ( bool bCold )
 
 	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
 		ET4000_Reset ( bCold );
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ATW800 )
+		ATW800_Reset ( bCold );
 }
 
 
@@ -171,6 +180,12 @@ static bool VME_ET4000_Decode ( uaecptr addr, uint32_t *pOffset, bool *pIsMem )
 {
 	uint32_t addr24 = addr & 0x00ffffff;
 
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ATW800 )
+	{
+		*pIsMem = true;
+		return ATW800_Decode ( addr24, pOffset );
+	}
+
 	if ( addr24 >= VME_NOVA_MEM_BASE && addr24 < VME_NOVA_MEM_BASE + VME_NOVA_MEM_SIZE )
 	{
 		*pIsMem = true;
@@ -194,6 +209,8 @@ static bool VME_ET4000_Decode ( uaecptr addr, uint32_t *pOffset, bool *pIsMem )
 static uint8_t VME_ET4000_ReadByte ( uint32_t offset, bool is_mem )
 {
 	VmeReadCount++;
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ATW800 )
+		return ATW800_ReadByte ( offset );
 	if ( is_mem )
 		return ET4000_Mem_ReadByte ( offset );
 	return ET4000_IO_ReadByte ( offset );
@@ -202,6 +219,11 @@ static uint8_t VME_ET4000_ReadByte ( uint32_t offset, bool is_mem )
 static void VME_ET4000_WriteByte ( uint32_t offset, bool is_mem, uint8_t val )
 {
 	VmeWriteCount++;
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_ATW800 )
+	{
+		ATW800_WriteByte ( offset, val );
+		return;
+	}
 	if ( is_mem )
 		ET4000_Mem_WriteByte ( offset, val );
 	else
@@ -221,7 +243,7 @@ uae_u32 REGPARAM3 VME_Mem_bget ( uaecptr addr )
 	uint8_t *p;
 	uint8_t val;
 
-	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
 		bool is_mem;
@@ -249,7 +271,7 @@ uae_u32 REGPARAM3 VME_Mem_wget ( uaecptr addr )
 	uint8_t *p;
 	uint16_t val;
 
-	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
 		bool is_mem;
@@ -278,7 +300,7 @@ uae_u32 REGPARAM3 VME_Mem_lget ( uaecptr addr )
 	uint8_t *p;
 	uint32_t val;
 
-	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
 		bool is_mem;
@@ -308,7 +330,7 @@ void REGPARAM3 VME_Mem_bput ( uaecptr addr, uae_u32 val )
 	const char *space;
 	uint8_t *p;
 
-	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
 		bool is_mem;
@@ -334,7 +356,7 @@ void REGPARAM3 VME_Mem_wput ( uaecptr addr, uae_u32 val )
 	const char *space;
 	uint8_t *p;
 
-	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
 		bool is_mem;
@@ -362,7 +384,7 @@ void REGPARAM3 VME_Mem_lput ( uaecptr addr, uae_u32 val )
 	const char *space;
 	uint8_t *p;
 
-	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
+	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
 		bool is_mem;
@@ -399,7 +421,7 @@ uae_u8 * REGPARAM3 VME_Mem_xlate ( uaecptr addr )
 	uint32_t VmeAddr;
 	const char *space;
 
-	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 || !pVmeA24Ram )
+	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 || !pVmeA24Ram )
 		return dummy;				/* no direct/executable access to the card */
 
 	return VME_DecodeAddr ( addr, &VmeAddr, &space );
@@ -419,6 +441,7 @@ void	VME_MemorySnapShot_Capture ( bool bSave )
 	MemorySnapShot_Store(&bAllocated, sizeof(bAllocated));
 
 	ET4000_MemorySnapShot_Capture ( bSave );
+	ATW800_MemorySnapShot_Capture ( bSave );
 
 	if ( !bAllocated )
 		return;
@@ -462,6 +485,12 @@ void VME_Info ( FILE *fp, uint32_t arg )
 		fprintf(fp, "VME accesses since reset: %llu reads, %llu writes\n",
 		        (unsigned long long)VmeReadCount, (unsigned long long)VmeWriteCount);
 		ET4000_Info ( fp, arg );
+		break;
+	 case VME_TYPE_ATW800:
+		fprintf(fp, "VME card emulation: ATW800/2 Seurat\n");
+		fprintf(fp, "VME accesses since reset: %llu reads, %llu writes\n",
+		        (unsigned long long)VmeReadCount, (unsigned long long)VmeWriteCount);
+		ATW800_Info ( fp, arg );
 		break;
 	 default:
 		fprintf(fp, "VME card emulation: unknown type %d\n", ConfigureParams.System.nVMEType);
