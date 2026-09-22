@@ -200,6 +200,7 @@ typedef enum {
 	OPT_BLITTER,
 	OPT_DSP,
 	OPT_VME,
+	OPT_VMEBASE,
 	OPT_RTC_YEAR,
 	OPT_TIMERD,
 	OPT_FASTBOOT,
@@ -503,6 +504,8 @@ static const opt_t HatariOptions[] = {
 	  "<x>", "DSP emulation (x = none/dummy/emu, Falcon only)" },
 	{ OPT_VME,       NULL, "--vme",
 	  "<x>", "VME card emulation (x = none/trace/et4000/atw800, MegaSTE/TT only)" },
+	{ OPT_VMEBASE,   NULL, "--vme-base",
+	  "<addr>", "A24 base address of the VME card (ATW800/2 ADDR jumper: 0xA00000 closed, 0xC00000 open)" },
 	{ OPT_RTC_YEAR,   NULL, "--rtc-year",
 	  "<int>", "Set initial year for RTC (0/1980-2079, 0=use host)" },
 	{ OPT_TIMERD,    NULL, "--timer-d",
@@ -2171,6 +2174,13 @@ bool Opt_ParseParameters(int argc, const char * const argv[], int *exitval)
 			bLoadAutoSave = false;
 			break;
 		}
+
+		case OPT_VMEBASE:
+			val = strtol(arg, NULL, 0);
+			if (val < 0 || val > 0xFFFFFF)
+				return Opt_ShowError(OPT_VMEBASE, arg, "Invalid VME A24 address");
+			ConfigureParams.System.nVMEBase = val;
+			break;
 
 		case OPT_VME:
 		{
