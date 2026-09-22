@@ -223,6 +223,7 @@ void Disasm_SetColumns(int *columns) {}
 void Disasm_DisableColumn(int column, const int *oldcols, int *newcols) {}
 
 /* fake MMU-translating debugger read (debug/debugcpu.c memdump modes s/u) */
+uint32_t debug_get_byte_mmu(uint32_t addr, int mode);
 uint32_t debug_get_byte_mmu(uint32_t addr, int mode)
 {
 	return 0;
