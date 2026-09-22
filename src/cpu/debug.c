@@ -365,6 +365,20 @@ static int debug_out (const TCHAR *format, ...)
 
 #endif	/* ! WINUAE_FOR_HATARI */
 
+#ifdef WINUAE_FOR_HATARI
+/* Read one byte through the MMU with the given function code
+ * (1 = user data, 5 = supervisor data), for Hatari's debugger. */
+uae_u32 debug_get_byte_mmu(uaecptr addr, int mode)
+{
+	int old = debug_mmu_mode;
+	uae_u32 v;
+	debug_mmu_mode = mode;
+	v = get_byte_debug(addr);
+	debug_mmu_mode = old;
+	return v;
+}
+#endif
+
 uae_u32 get_byte_debug (uaecptr addr)
 {
 	uae_u32 v = 0xff;

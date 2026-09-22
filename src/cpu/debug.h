@@ -362,3 +362,6 @@ extern void mmu_do_hit (void);
 #endif /* DEBUGGER */
 
 #endif /* UAE_DEBUG_H */
+#ifdef WINUAE_FOR_HATARI
+extern uae_u32 debug_get_byte_mmu(uaecptr addr, int mode);
+#endif
