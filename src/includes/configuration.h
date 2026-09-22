@@ -422,6 +422,7 @@ typedef struct
   bool bAddressSpace24;           /* true if using a 24-bit address bus */
   VIDEOTIMINGMODE VideoTimingMode;
   VMETYPE nVMEType;               /* VME card emulation (MegaSTE and TT only) */
+  int nVMEBase;                   /* A24 base of the VME card (ATW800/2 ADDR jumper: 0xA00000 closed, 0xC00000 open) */
 
   bool bCycleExactCpu;
   bool bCpuDataCache;
