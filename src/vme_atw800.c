@@ -72,7 +72,7 @@ const char VmeAtw800_fileid[] = "Hatari vme_atw800.c";
 
 #define ATW_VRAM_SIZE	0x200000		/* 2 MB card */
 #define ATW_VRAM_MASK	(ATW_VRAM_SIZE-1)
-#define ATW_BASE_A24	0x00A00000		/* ADDR jumper position */
+#define ATW_BASE_A24	((uint32_t)ConfigureParams.System.nVMEBase)	/* ADDR jumper: --vme-base */
 
 /* FPGA structure offsets inside the video memory (2 MB layout) */
 #define ATW_LUT_OFF	(ATW_VRAM_SIZE - 0x1000)	/* 0x1FF000 */
