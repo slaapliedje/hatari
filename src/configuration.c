@@ -591,6 +591,7 @@ static const struct Config_Tag configs_System[] =
 	{ "nVMEType", Int_Tag, &ConfigureParams.System.nVMEType },
 	{ "nVMEBase", Int_Tag, &ConfigureParams.System.nVMEBase },
 	{ "nVMEVram", Int_Tag, &ConfigureParams.System.nVMEVram },
+	{ "nXBusType", Int_Tag, &ConfigureParams.System.nXBusType },
 	{ NULL , Error_Tag, NULL }
 };
 
@@ -863,6 +864,7 @@ void Configuration_SetDefault(void)
 	ConfigureParams.System.nVMEType = VME_TYPE_NONE;
 	ConfigureParams.System.nVMEBase = 0x00A00000;
 	ConfigureParams.System.nVMEVram = 2;
+	ConfigureParams.System.nXBusType = XBUS_TYPE_NONE;
 	ConfigureParams.System.bCompatibleCpu = true;
 	ConfigureParams.System.bBlitter = false;
 	ConfigureParams.System.bPatchTimerD = false;

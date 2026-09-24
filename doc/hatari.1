@@ -563,6 +563,17 @@ both A0/A1 jumpers closed (TT only): a 4 MB window, which needs
 half mirroring the lower, until the driver writes 3 to the memory
 register, as a driver does when it detects the 4 MB card.
 .TP
+.B \-\-xbus <x>
+Expansion bus windows beside the VME16 (A24:D16) window at 0xFE000000,
+for bus adapter hardware that decodes the top address byte into distinct
+buses: 0xFC000000-0xFCFFFFFF is ISA (a 16 bit bus: long accesses become
+two word cycles) and 0xFD000000-0xFDFFFFFF is VME A32:D32 (x = none or
+trace).  With "trace" both windows are backed by RAM and every access is
+logged with the "vme" trace flag (window, offset, size, value, PC), to see
+what a driver probing for its card expects there; "info xbus" shows the
+access counts.  Only reachable with 32 bit addressing (TT, Falcon, or a
+MegaSTE with \-\-addr24 off).
+.TP
 .B \-\-rtc\-year <int>
 With the default value 0, RTC date and time are taken from the host.
 If application does not handle current dates, this can be used to

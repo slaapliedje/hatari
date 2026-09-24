@@ -202,6 +202,7 @@ typedef enum {
 	OPT_VME,
 	OPT_VMEBASE,
 	OPT_VMEVRAM,
+	OPT_XBUS,
 	OPT_RTC_YEAR,
 	OPT_TIMERD,
 	OPT_FASTBOOT,
@@ -509,6 +510,8 @@ static const opt_t HatariOptions[] = {
 	  "<addr>", "A24 base address of the VME card (ATW800/2 ADDR jumper: 0xA00000 closed, 0xC00000 open)" },
 	{ OPT_VMEVRAM,   NULL, "--vme-vram",
 	  "<int>", "ATW800/2 video memory in MB (2 or 4)" },
+	{ OPT_XBUS,      NULL, "--xbus",
+	  "<x>", "ISA (0xFC) / VME32 (0xFD) windows (x = none/trace, 32-bit addressing)" },
 	{ OPT_RTC_YEAR,   NULL, "--rtc-year",
 	  "<int>", "Set initial year for RTC (0/1980-2079, 0=use host)" },
 	{ OPT_TIMERD,    NULL, "--timer-d",
@@ -2191,6 +2194,20 @@ bool Opt_ParseParameters(int argc, const char * const argv[], int *exitval)
 				return Opt_ShowError(OPT_VMEVRAM, arg, "ATW800/2 video memory must be 2 or 4 MB");
 			ConfigureParams.System.nVMEVram = val;
 			break;
+
+		case OPT_XBUS:
+		{
+			static const opt_keyval_t keyval[] = {
+				{"none",   XBUS_TYPE_NONE},
+				{"off",    XBUS_TYPE_NONE},
+				{"trace",  XBUS_TYPE_TRACE},
+			};
+			if (!Opt_SetKeyVal(arg, keyval, ARRAY_SIZE(keyval), &val))
+				return Opt_ShowError(OPT_XBUS, arg, "Unknown ISA/VME32 window type");
+			ConfigureParams.System.nXBusType = val;
+			bLoadAutoSave = false;
+			break;
+		}
 
 		case OPT_VME:
 		{

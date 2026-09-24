@@ -22,6 +22,7 @@ const char Memory_fileid[] = "Hatari memory.c";
 #include "tos.h"
 #include "ide.h"
 #include "vme_nova.h"
+#include "xbus.h"
 #include "ioMem.h"
 #include "reset.h"
 #include "stMemory.h"
@@ -1216,6 +1217,14 @@ static addrbank VMEmem_bank =
     VME_Mem_lget, VME_Mem_wget, ABFLAG_IO
 };
 
+static addrbank XBusmem_bank =
+{
+    XBus_Mem_lget, XBus_Mem_wget, XBus_Mem_bget,
+    XBus_Mem_lput, XBus_Mem_wput, XBus_Mem_bput,
+    XBus_Mem_xlate, XBus_Mem_check, NULL, "xbus_mem" , "ISA/VME32 memory",
+    XBus_Mem_lget, XBus_Mem_wget, ABFLAG_IO
+};
+
 static addrbank IOmem_bank =
 {
     IoMem_lget, IoMem_wget, IoMem_bget,
@@ -1607,6 +1616,25 @@ static void memory_map_VME ( void )
 
 
 /*
+ * With --xbus trace and 32 bit addressing, map the expansion bus windows a
+ * top-byte decoder puts beside the VME16 window at 0xFE: 0xFC = ISA and
+ * 0xFD = VME A32:D32 (see xbus.c). Otherwise they keep their default
+ * mapping.
+ */
+static void memory_map_XBus ( void )
+{
+	if ( !XBus_IsAvailable() )
+		return;
+
+	XBus_Init();
+	XBusmem_bank.baseaddr = NULL;		/* No direct memory access, handlers only */
+	init_bank ( &XBusmem_bank , 0 );
+	map_banks_ce ( &XBusmem_bank, XBUS_ISA_START >> 16, XBUS_WINDOW_SIZE >> 16, 0, CE_MEMBANK_CHIP16, CE_MEMBANK_NOT_CACHABLE );
+	map_banks_ce ( &XBusmem_bank, XBUS_VME32_START >> 16, XBUS_WINDOW_SIZE >> 16, 0, CE_MEMBANK_FAST32, CE_MEMBANK_NOT_CACHABLE );
+}
+
+
+/*
  * Initialize the standard RAM memory banks
  *   - Unmodified STF/STE can have a max of 4 MB, but we can allow up to 14 MB
  *     if RAM detection code is bypassed in the ROM (see tos.c)
@@ -1859,6 +1887,9 @@ void memory_init(uae_u32 NewSTMemSize, uae_u32 NewTTMemSize, uae_u32 NewRomMemSt
 
 	/* Map the VME regions on TT / MegaSTE (VME bank or bus errors, see memory_map_VME) */
 	memory_map_VME ();
+
+	/* ISA / VME32 trace windows at 0xFC / 0xFD (32 bit addressing only) */
+	memory_map_XBus ();
 
 	/* Illegal memory regions cause a bus error on the ST: */
 	map_banks_ce(&BusErrMem_bank, 0xF10000 >> 16, 0x9, 0, CE_MEMBANK_CHIP16, CE_MEMBANK_NOT_CACHABLE);
