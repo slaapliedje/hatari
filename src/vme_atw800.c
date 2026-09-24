@@ -166,7 +166,10 @@ static int16_t AtwBlitWord ( int off )
  *   1 = copy, addresses ascending from src/dst
  *   3 = copy DESCENDING: src/dst name the LAST byte of the first row
  *       walked, each row is copied downwards, strides are negative
- *   5 = fill: the src row (src stride 0) repeated down the dst rows
+ *   5 = fill (src stride 0): each dst row gets the first 64 src bytes,
+ *       then the src's second 32-byte block repeated - a 64-byte source
+ *       of one colour fills any width (measured: a 1024-byte row from a
+ *       64-byte pattern came out bytes 0-63, then 32-63 over and over)
  * The real engine runs asynchronously (the CPU is not held off; drivers
  * wait on the busy bit); here it completes at once.
  */
@@ -187,7 +190,11 @@ static void ATW800_DoBlit ( void )
 	if ( width != 0 )
 		for ( y = 0 ; y < rows ; y++ )
 		{
-			if ( cmd & 2 )		/* backwards: from the last byte down */
+			if ( cmd & 4 )		/* fill: 64 bytes, then 32-byte tiles */
+				for ( x = 0 ; x < width ; x++ )
+					pAtwVram[( dst + x ) & ATW_VRAM_MASK] =
+						pAtwVram[( src + ( x < 64 ? x : 32 + ( x & 31 ) ) ) & ATW_VRAM_MASK];
+			else if ( cmd & 2 )	/* backwards: from the last byte down */
 				for ( x = 0 ; x < width ; x++ )
 					pAtwVram[( dst - x ) & ATW_VRAM_MASK] =
 						pAtwVram[( src - x ) & ATW_VRAM_MASK];
