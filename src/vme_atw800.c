@@ -22,19 +22,19 @@
     +0x1FF200  FPGA info 32-byte version string, " cpm" at offset 24
                          (the card's ID, 0x2063706D)
     +0x1FF800  VTG       video timing generator register file (word regs)
-    +0x1FF900  blitter   2D copy engine:
+    +0x1FF900  blitter   2D copy engine, verified on a real V0205 card
+                         (VRAM read back from Atari System V, 2026-09-24):
                          +0x00 src addr (long), +0x04 dst addr (long),
                          +0x08 src stride (word, signed), +0x0A dst
                          stride (word, signed), +0x0C width in bytes,
-                         +0x0E row count, +0x10 command/status — the
-                         driver writes the command (bit 0 = GO, upper
-                         bits select the op: 0x0003 copy, 0x0005 fill
-                         from a single source row via sstride=0) and
-                         polls it (btst #0 or tst.w). Emulated blits
-                         complete instantly: the copy runs on the GO
-                         write and the whole word reads back 0. Row copies use memmove semantics; the
-                         negative strides a driver programs walk the rows in
-                         the safe direction themselves
+                         +0x0E row count, +0x10 command: bit 0 = GO,
+                         bit 1 = backwards, bit 2 = fill; 1 = copy
+                         ascending, 3 = copy DESCENDING (src/dst = the
+                         last byte, negative strides), 5 = fill from one
+                         source row (sstride 0). Write-only: every offset
+                         reads back the status word, bit 0 = busy (the
+                         real engine is asynchronous; ~38 MB/s copy).
+                         Emulated blits complete at once, status 0.
     +0x1FFAC0  FPGA link virtual Transputer C011 interface: status reads
                          return 0 = no data / not ready
 
@@ -158,8 +158,18 @@ static int16_t AtwBlitWord ( int off )
 	return (int16_t)( ( AtwBlitRegs[off] << 8 ) | AtwBlitRegs[off+1] );
 }
 
-/* Execute a blit: instant, then clear the GO/BUSY bit (bit 0 of +0x10).
- * Register model: see the header comment. */
+/*
+ * Execute a blit, instantly. The register model and the commands were
+ * verified on a real V0205 card (2026-09-24, VRAM read back through
+ * /dev/mem from Atari System V):
+ *   bit 0 = go, bit 1 = backwards, bit 2 = fill
+ *   1 = copy, addresses ascending from src/dst
+ *   3 = copy DESCENDING: src/dst name the LAST byte of the first row
+ *       walked, each row is copied downwards, strides are negative
+ *   5 = fill: the src row (src stride 0) repeated down the dst rows
+ * The real engine runs asynchronously (the CPU is not held off; drivers
+ * wait on the busy bit); here it completes at once.
+ */
 static void ATW800_DoBlit ( void )
 {
 	uint32_t src = AtwBlitLong ( 0x00 ) & ATW_VRAM_MASK;
@@ -169,7 +179,7 @@ static void ATW800_DoBlit ( void )
 	uint16_t width  = (uint16_t)AtwBlitWord ( 0x0C );
 	uint16_t rows   = (uint16_t)AtwBlitWord ( 0x0E );
 	uint16_t cmd    = (uint16_t)AtwBlitWord ( 0x10 );
-	uint16_t y;
+	uint16_t y, x;
 
 	LOG_TRACE(TRACE_VME, "vme atw blit run cmd=0x%04x src=$%06x dst=$%06x sstr=%d dstr=%d w=%u h=%u\n",
 	          cmd, src, dst, sstride, dstride, width, rows);
@@ -177,18 +187,17 @@ static void ATW800_DoBlit ( void )
 	if ( width != 0 )
 		for ( y = 0 ; y < rows ; y++ )
 		{
-			/* clamp a row that would run off the end of VRAM */
-			if ( src + width <= ATW_VRAM_SIZE && dst + width <= ATW_VRAM_SIZE )
+			if ( cmd & 2 )		/* backwards: from the last byte down */
+				for ( x = 0 ; x < width ; x++ )
+					pAtwVram[( dst - x ) & ATW_VRAM_MASK] =
+						pAtwVram[( src - x ) & ATW_VRAM_MASK];
+			else if ( src + width <= ATW_VRAM_SIZE && dst + width <= ATW_VRAM_SIZE )
 				memmove ( pAtwVram + dst, pAtwVram + src, width );
 			src = ( src + sstride ) & ATW_VRAM_MASK;
 			dst = ( dst + dstride ) & ATW_VRAM_MASK;
 		}
-
-	/* done: the whole command/status word reads back 0, whether a driver
-	 * polls bit 0 or tests the full word */
-	AtwBlitRegs[0x10] = 0;
-	AtwBlitRegs[0x11] = 0;
 }
+
 static bool	bAtwPalDirty;
 
 
@@ -285,8 +294,11 @@ uint8_t	ATW800_ReadByte ( uint32_t offset )
 	 * screen's own pattern), so a driver cannot read a mode back. */
 	if ( offset >= ATW_BLIT_OFF && offset < ATW_BLIT_OFF + ATW_BLIT_SIZE )
 	{
+		/* The registers are write-only: every offset of the window
+		 * reads back the engine's status word (measured on V0205), bit
+		 * 0 = busy. The emulated engine is always done. */
 		LOG_TRACE(TRACE_VME, "vme atw blit rd $%06x pc=%x\n", offset, M68000_GetPC());
-		return AtwBlitRegs[ offset - ATW_BLIT_OFF ];
+		return 0;
 	}
 	if ( offset >= ATW_LINK_OFF && offset < ATW_LINK_OFF + ATW_LINK_SIZE )
 	{
