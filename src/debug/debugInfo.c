@@ -40,6 +40,7 @@ const char DebugInfo_fileid[] = "Hatari debuginfo.c";
 #include "stMemory.h"
 #include "scu_vme.h"
 #include "vme_nova.h"
+#include "xbus.h"
 #include "tos.h"
 #include "scc.h"
 #include "vdi.h"
@@ -700,6 +701,7 @@ static const struct {
 	{ false,"scu",       SCU_Info,             NULL, "Show SCU/VME register information" },
 	{ false,"vdi",       VDI_Info,             NULL, "Show VDI vector contents (with <value>, show opcodes)" },
 	{ false,"vme",       VME_Info,             NULL, "Show VME card emulation information" },
+	{ false,"xbus",      XBus_Info,            NULL, "Show ISA (0xFC) / VME32 (0xFD) trace window information" },
 	{ false,"videl",     Videl_Info,           NULL, "Show Falcon Videl register contents" },
 	{ false,"video",     Video_Info,           NULL, "Show Video information" },
 	{ false,"xbios",     XBios_Info,           NULL, "Show XBIOS opcodes" },

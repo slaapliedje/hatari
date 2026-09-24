@@ -58,6 +58,7 @@ set(SOURCES
 	video_et4000.c
 	vme_atw800.c
 	vme_nova.c
+	xbus.c
 	shortcut.c
 	sound.c
 	spec512.c

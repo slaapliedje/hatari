@@ -407,6 +407,12 @@ typedef enum
   VME_TYPE_ATW800                 /* ATW800/2 "Seurat" FPGA graphics card */
 } VMETYPE;
 
+typedef enum
+{
+  XBUS_TYPE_NONE,                 /* 0xFC ISA / 0xFD VME32 windows: bus errors */
+  XBUS_TYPE_TRACE                 /* RAM-backed, all accesses traced (xbus.c) */
+} XBUSTYPE;
+
 typedef struct
 {
   int nCpuLevel;
@@ -424,6 +430,7 @@ typedef struct
   VMETYPE nVMEType;               /* VME card emulation (MegaSTE and TT only) */
   int nVMEBase;                   /* A24 base of the VME card (ATW800/2 ADDR jumper: 0xA00000 closed, 0xC00000 open) */
   int nVMEVram;                   /* ATW800/2 VidMem window in MB: 2, or 4 (A0+A1 closed, TT only) */
+  XBUSTYPE nXBusType;             /* 0xFC ISA / 0xFD VME32 windows (32 bit addressing only) */
 
   bool bCycleExactCpu;
   bool bCpuDataCache;
