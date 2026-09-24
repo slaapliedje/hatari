@@ -423,6 +423,7 @@ typedef struct
   VIDEOTIMINGMODE VideoTimingMode;
   VMETYPE nVMEType;               /* VME card emulation (MegaSTE and TT only) */
   int nVMEBase;                   /* A24 base of the VME card (ATW800/2 ADDR jumper: 0xA00000 closed, 0xC00000 open) */
+  int nVMEVram;                   /* ATW800/2 VidMem window in MB: 2, or 4 (A0+A1 closed, TT only) */
 
   bool bCycleExactCpu;
   bool bCpuDataCache;
