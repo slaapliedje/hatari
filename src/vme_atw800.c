@@ -430,6 +430,11 @@ void	ATW800_Render ( void )
 	height = AtwVtg[VTG_VDI];
 	depth  = VTG_CTRL_DEPTH ( AtwVtg[VTG_CTRL] );
 	vbase  = ( (uint32_t)( AtwVtg[VTG_VMEM_HI] & 0x7f ) << 16 ) | AtwVtg[VTG_VMEM_LO];
+	/* A start of 1 does NOT move the picture on a real V0205 card (32 bpp
+	 * test pattern, 2026-09-24): the low bits are ignored, or the unit
+	 * is a 32-bit word. Which one is not measured yet; ignoring the low
+	 * two bits is right for either as long as the start is below 4. */
+	vbase &= ~3u;
 
 	if ( width > 2048 )	width = 2048;
 	if ( height > 1200 )	height = 1200;
