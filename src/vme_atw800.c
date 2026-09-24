@@ -54,7 +54,8 @@
   VTG control register (manual p.12-13, "-gfe dcba"):
     bit0 a = VTG enable          bit3 d = 0->1 transfers PLL registers
     bit1 b = positive Hsync      bits5:4 fe = depth: 00=1bpp 01=8bpp+LUT
-    bit2 c = positive Vsync                  10=16bpp 11=15bpp
+    bit2 c = positive Vsync                  10=16bpp 11=15bpp (V1.0a;
+                                             32bpp on V0205+, see Render)
     bit6 g = LUT select (0 = Atari, 1 = Transputer)
   8bpp with LUT enabled = ctrl 0x19.
 */
@@ -70,12 +71,27 @@ const char VmeAtw800_fileid[] = "Hatari vme_atw800.c";
 #include "statusbar.h"
 #include "vme_atw800.h"
 
-#define ATW_VRAM_SIZE	0x200000		/* 2 MB card */
+/*
+ * Video memory size. The A0/A1 jumpers (CPLD firmware 2+) select a 2 MB
+ * window, or - both closed, TT only - a 4 MB window at 0x(FE)A00000
+ * (--vme-vram 4 with --vme-base 0xA00000). With the 4 MB window, the
+ * card still starts in a 2 MB layout: the upper 2 MB MIRROR the lower
+ * (measured on a real V0205 card with register 15 = 1: identical data at
+ * +2 MB and the id block at both 0xFEBFF200 and 0xFEDFF200). Register
+ * 15 = 3 (bit 1: "A21" by analogy with nano_vtg.h's "A20GATE 0 = 1 MB,
+ * 1 = 2 MB") switches to the full 4 MB, with the FPGA structures at the
+ * top of the 4 MB (measured on a real card: write 1 via both aliases,
+ * write 3 via the lower, look for " cpm" at 0xFEDFF218).
+ * The FPGA structures always sit at the top of the CURRENT size.
+ */
+#define ATW_VRAM_ALLOC	0x400000		/* the 4 MB card's worth */
+#define ATW_WINDOW	( ConfigureParams.System.nVMEVram == 4 ? 0x400000u : 0x200000u )
+#define ATW_VRAM_SIZE	AtwSize			/* current layout: 2 or 4 MB */
 #define ATW_VRAM_MASK	(ATW_VRAM_SIZE-1)
 #define ATW_BASE_A24	((uint32_t)ConfigureParams.System.nVMEBase)	/* ADDR jumper: --vme-base */
 
-/* FPGA structure offsets inside the video memory (2 MB layout) */
-#define ATW_LUT_OFF	(ATW_VRAM_SIZE - 0x1000)	/* 0x1FF000 */
+/* FPGA structure offsets inside the video memory (top of the current size) */
+#define ATW_LUT_OFF	(ATW_VRAM_SIZE - 0x1000)	/* 0x1FF000 / 0x3FF000 */
 #define ATW_LUT_SIZE	0x200
 #define ATW_INFO_OFF	(ATW_VRAM_SIZE - 0xE00)		/* 0x1FF200 */
 #define ATW_INFO_SIZE	0x20
@@ -121,6 +137,13 @@ static uint16_t	AtwVtg[ATW_VTG_SIZE/2];
 static uint16_t	AtwLut[256];
 static uint8_t	AtwBlitRegs[ATW_BLIT_SIZE];
 static uint16_t	AtwMemReg;
+static uint32_t	AtwSize = 0x200000;		/* current layout, from AtwMemReg */
+
+static void AtwUpdateSize ( void )
+{
+	AtwSize = ( ConfigureParams.System.nVMEVram == 4 && ( AtwMemReg & 2 ) )
+	          ? 0x400000 : 0x200000;
+}
 
 static uint32_t	AtwHostPal[256];		/* LUT -> host pixels */
 
@@ -167,18 +190,18 @@ static void ATW800_DoBlit ( void )
 	AtwBlitRegs[0x11] = 0;
 }
 static bool	bAtwPalDirty;
-static int	AtwUnsupportedLogged;
 
 
 void	ATW800_Init ( void )
 {
 	if ( !pAtwVram )
 	{
-		pAtwVram = malloc ( ATW_VRAM_SIZE );
+		pAtwVram = malloc ( ATW_VRAM_ALLOC );
 		if ( !pAtwVram )
 			Main_ErrorExit ( "Out of memory (ATW800/2 video memory)", NULL, 1 );
-		memset ( pAtwVram, 0, ATW_VRAM_SIZE );
+		memset ( pAtwVram, 0, ATW_VRAM_ALLOC );
 	}
+	AtwUpdateSize ();
 	bAtwPalDirty = true;
 }
 
@@ -200,25 +223,26 @@ void	ATW800_Reset ( bool bCold )
 		memset ( AtwVtg, 0, sizeof(AtwVtg) );
 		memset ( AtwLut, 0, sizeof(AtwLut) );
 		AtwMemReg = 0;
+		AtwUpdateSize ();
 		if ( pAtwVram )
-			memset ( pAtwVram, 0, ATW_VRAM_SIZE );
+			memset ( pAtwVram, 0, ATW_VRAM_ALLOC );
 		bAtwPalDirty = true;
-		AtwUnsupportedLogged = 0;
 	}
 }
 
 
 /**
- * The card responds only inside its 2 MB VidMem window at the ADDR
- * jumper base. Everything else on the bus stays bus-error — including
- * the 4 MB-offset register addresses, which is how set_adr() discovers
- * this is a 2 MB card.
+ * The card responds only inside its VidMem window (2 or 4 MB, per the
+ * jumpers) at the ADDR jumper base. Everything else on the bus stays
+ * bus-error — including, on a 2 MB window, the 4 MB-offset register
+ * addresses, which is how set_adr() discovers a 2 MB card. Inside the
+ * window, a 2 MB layout mirrors (see ATW_VRAM_ALLOC).
  */
 bool	ATW800_Decode ( uint32_t addr24, uint32_t *pOffset )
 {
-	if ( addr24 >= ATW_BASE_A24 && addr24 < ATW_BASE_A24 + ATW_VRAM_SIZE )
+	if ( addr24 >= ATW_BASE_A24 && addr24 < ATW_BASE_A24 + ATW_WINDOW )
 	{
-		*pOffset = addr24 - ATW_BASE_A24;
+		*pOffset = ( addr24 - ATW_BASE_A24 ) & ATW_VRAM_MASK;
 		return true;
 	}
 	/* CPLD / C011 register block: 0xDFFA80-0xDFFAFF on the MegaSTE,
@@ -256,16 +280,9 @@ uint8_t	ATW800_ReadByte ( uint32_t offset )
 		LOG_TRACE(TRACE_VME, "vme atw info rd $%06x val=0x%02x pc=%x\n", offset, v, M68000_GetPC());
 		return v;
 	}
-	if ( offset >= ATW_VTG_OFF && offset < ATW_VTG_OFF + ATW_VTG_SIZE )
-	{
-		uint16_t w;
-		uint8_t v;
-		int reg = ( offset - ATW_VTG_OFF ) >> 1;
-		w = ( reg == VTG_MEM_REG ) ? AtwMemReg : AtwVtg[reg];
-		v = ( offset & 1 ) ? ( w & 0xff ) : ( w >> 8 );
-		LOG_TRACE(TRACE_VME, "vme atw vtg rd $%06x val=0x%02x pc=%x\n", offset, v, M68000_GetPC());
-		return v;
-	}
+	/* The VTG registers are write-only: a read returns the video memory
+	 * underneath (measured on a V0205 card: 0xFEDFF800.. read back the
+	 * screen's own pattern), so a driver cannot read a mode back. */
 	if ( offset >= ATW_BLIT_OFF && offset < ATW_BLIT_OFF + ATW_BLIT_SIZE )
 	{
 		LOG_TRACE(TRACE_VME, "vme atw blit rd $%06x pc=%x\n", offset, M68000_GetPC());
@@ -309,6 +326,8 @@ void	ATW800_WriteByte ( uint32_t offset, uint8_t val )
 			*pw = ( *pw & 0xff00 ) | val;
 		else
 			*pw = ( *pw & 0x00ff ) | ( val << 8 );
+		if ( reg == VTG_MEM_REG )
+			AtwUpdateSize ();
 		LOG_TRACE(TRACE_VME, "vme atw vtg wr $%06x val=0x%02x pc=%x\n", offset, val, M68000_GetPC());
 		if ( reg == VTG_CTRL && ( offset & 1 ) )
 			LOG_TRACE(TRACE_VME, "vme atw vtg ctrl=0x%04x %dx%d depth=%d pc=%x\n",
@@ -368,9 +387,35 @@ bool	ATW800_UseCardScreen ( void )
 
 /**
  * Render the card frame whole, once per VBL (same scheme as
- * ET4000_Render). Depths: 1bpp and 8bpp through the LUT; 15/16bpp are
- * not rendered yet (logged once).
+ * ET4000_Render). Depths: 1bpp and 8bpp through the LUT, and the two
+ * direct-colour codes:
+ *   2 = 16bpp. The manual's word is G2G1G0B4B3B2B1B0 R4R3R2R1R0G5G4G3,
+ *       i.e. a LITTLE-endian RGB565 word (the even byte holds the low
+ *       half) - unlike the LUT, which is a big-endian RGB565 word.
+ *   3 = 32bpp on firmware V0205+ (ctrl 0x39, bypl = 4 x width; the
+ *       V1.0a manual still calls code 3 15bpp). The byte order is NOT documented: modelled as a little-
+ *       endian 0x00RRGGBB word by analogy with 16bpp (bytes B, G, R, x).
+ *       UNVERIFIED on hardware - check a test pattern on a real card
+ *       before trusting a driver that agrees with this.
  */
+static uint32_t AtwDirR[256], AtwDirG[256], AtwDirB[256];	/* host pixel parts */
+static bool	bAtwDirReady;
+
+static void ATW800_InitDirect ( void )
+{
+	int i;
+
+	/* host formats are packed channels, so a pixel is the OR of its
+	 * three single-channel mappings */
+	for ( i = 0 ; i < 256 ; i++ )
+	{
+		AtwDirR[i] = Screen_MapRGB ( i, 0, 0 );
+		AtwDirG[i] = Screen_MapRGB ( 0, i, 0 );
+		AtwDirB[i] = Screen_MapRGB ( 0, 0, i );
+	}
+	bAtwDirReady = true;
+}
+
 void	ATW800_Render ( void )
 {
 	static int prev_w, prev_h;
@@ -387,14 +432,7 @@ void	ATW800_Render ( void )
 
 	if ( width > 2048 )	width = 2048;
 	if ( height > 1200 )	height = 1200;
-	rowbytes = ( depth == 0 ) ? width / 8 : width;
-
-	if ( depth >= 2 && !( AtwUnsupportedLogged & 1 ) )
-	{
-		Log_Printf(LOG_WARN, "ATW800/2: 15/16bpp mode not rendered yet (ctrl=0x%04x)\n",
-		           AtwVtg[VTG_CTRL]);
-		AtwUnsupportedLogged |= 1;
-	}
+	rowbytes = ( depth == 0 ) ? width / 8 : width << ( depth - 1 );	/* 1, 2, 4 bytes */
 
 	if ( width != prev_w || height != prev_h )
 	{
@@ -404,7 +442,12 @@ void	ATW800_Render ( void )
 	}
 
 	if ( bAtwPalDirty )
+	{
 		ATW800_RecalcHostPalette ();
+		bAtwDirReady = false;		/* host format may have changed too */
+	}
+	if ( depth >= 2 && !bAtwDirReady )
+		ATW800_InitDirect ();
 
 	if ( ConfigureParams.Screen.DisableVideo || !Screen_Lock() )
 		return;
@@ -439,9 +482,24 @@ void	ATW800_Render ( void )
 			}
 			break;
 
-		 default:				/* 15/16bpp: not rendered yet */
+		 case 2:				/* 16bpp: little-endian RGB565 */
 			for ( x = 0 ; x < scrwidth ; x++ )
-				dst[x] = AtwHostPal[0];
+			{
+				uint32_t a = ( base + ( ( x * width / scrwidth ) << 1 ) ) & ATW_VRAM_MASK;
+				uint16_t w = pAtwVram[a] | ( pAtwVram[( a + 1 ) & ATW_VRAM_MASK] << 8 );
+				uint8_t r = ( w >> 11 ) << 3, g = ( ( w >> 5 ) & 0x3f ) << 2, b = ( w & 0x1f ) << 3;
+				dst[x] = AtwDirR[r | ( r >> 5 )] | AtwDirG[g | ( g >> 6 )] | AtwDirB[b | ( b >> 5 )];
+			}
+			break;
+
+		 default:				/* 32bpp: bytes B, G, R, x (unverified) */
+			for ( x = 0 ; x < scrwidth ; x++ )
+			{
+				uint32_t a = ( base + ( ( x * width / scrwidth ) << 2 ) ) & ATW_VRAM_MASK;
+				dst[x] = AtwDirB[pAtwVram[a]]
+				       | AtwDirG[pAtwVram[( a + 1 ) & ATW_VRAM_MASK]]
+				       | AtwDirR[pAtwVram[( a + 2 ) & ATW_VRAM_MASK]];
+			}
 			break;
 		}
 	}
@@ -465,19 +523,22 @@ void	ATW800_MemorySnapShot_Capture ( bool bSave )
 	{
 		if ( !bSave && !pAtwVram )
 			ATW800_Init ();
-		MemorySnapShot_Store(pAtwVram, ATW_VRAM_SIZE);
+		MemorySnapShot_Store(pAtwVram, ATW_VRAM_ALLOC);
 	}
 
 	if ( !bSave )
+	{
+		AtwUpdateSize ();
 		bAtwPalDirty = true;
+	}
 }
 
 
 void	ATW800_Info ( FILE *fp, uint32_t arg )
 {
-	fprintf(fp, "ATW800/2 Seurat: 2MB VidMem at A24 0x%06x, VTG ctrl=0x%04x\n",
-	        ATW_BASE_A24, AtwVtg[VTG_CTRL]);
-	fprintf(fp, "  mode: %dx%d depth-code=%d (0=1bpp 1=8bpp 2=16bpp 3=15bpp) vmem=0x%x memreg=0x%x\n",
+	fprintf(fp, "ATW800/2 Seurat: %uMB window at A24 0x%06x, %uMB layout, VTG ctrl=0x%04x\n",
+	        ATW_WINDOW >> 20, ATW_BASE_A24, AtwSize >> 20, AtwVtg[VTG_CTRL]);
+	fprintf(fp, "  mode: %dx%d depth-code=%d (0=1bpp 1=8bpp 2=16bpp 3=32bpp) vmem=0x%x memreg=0x%x\n",
 	        AtwVtg[VTG_HDI], AtwVtg[VTG_VDI], VTG_CTRL_DEPTH(AtwVtg[VTG_CTRL]),
 	        ( (uint32_t)( AtwVtg[VTG_VMEM_HI] & 0x7f ) << 16 ) | AtwVtg[VTG_VMEM_LO],
 	        AtwMemReg);

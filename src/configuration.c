@@ -590,6 +590,7 @@ static const struct Config_Tag configs_System[] =
 	{ "VideoTiming", Int_Tag, &ConfigureParams.System.VideoTimingMode },
 	{ "nVMEType", Int_Tag, &ConfigureParams.System.nVMEType },
 	{ "nVMEBase", Int_Tag, &ConfigureParams.System.nVMEBase },
+	{ "nVMEVram", Int_Tag, &ConfigureParams.System.nVMEVram },
 	{ NULL , Error_Tag, NULL }
 };
 
@@ -861,6 +862,7 @@ void Configuration_SetDefault(void)
 	ConfigureParams.System.VideoTimingMode = VIDEO_TIMING_MODE_WS3;
 	ConfigureParams.System.nVMEType = VME_TYPE_NONE;
 	ConfigureParams.System.nVMEBase = 0x00A00000;
+	ConfigureParams.System.nVMEVram = 2;
 	ConfigureParams.System.bCompatibleCpu = true;
 	ConfigureParams.System.bBlitter = false;
 	ConfigureParams.System.bPatchTimerD = false;
