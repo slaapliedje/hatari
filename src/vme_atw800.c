@@ -392,11 +392,12 @@ bool	ATW800_UseCardScreen ( void )
  *   2 = 16bpp. The manual's word is G2G1G0B4B3B2B1B0 R4R3R2R1R0G5G4G3,
  *       i.e. a LITTLE-endian RGB565 word (the even byte holds the low
  *       half) - unlike the LUT, which is a big-endian RGB565 word.
+ *       Confirmed on a real card.
  *   3 = 32bpp on firmware V0205+ (ctrl 0x39, bypl = 4 x width; the
- *       V1.0a manual still calls code 3 15bpp). The byte order is NOT documented: modelled as a little-
- *       endian 0x00RRGGBB word by analogy with 16bpp (bytes B, G, R, x).
- *       UNVERIFIED on hardware - check a test pattern on a real card
- *       before trusting a driver that agrees with this.
+ *       V1.0a manual still calls code 3 15bpp). Bytes R, G, B, x in memory order - undocumented, and
+ *       measured on a real V0205 card (atari-sysv-sp1 tools/atw/atwtest
+ *       on a monitor, 2026-09-24; the 16bpp order was confirmed the same
+ *       way). A guess of B, G, R, x by analogy with 16bpp was WRONG.
  */
 static uint32_t AtwDirR[256], AtwDirG[256], AtwDirB[256];	/* host pixel parts */
 static bool	bAtwDirReady;
@@ -492,13 +493,13 @@ void	ATW800_Render ( void )
 			}
 			break;
 
-		 default:				/* 32bpp: bytes B, G, R, x (unverified) */
+		 default:				/* 32bpp: bytes R, G, B, x (measured) */
 			for ( x = 0 ; x < scrwidth ; x++ )
 			{
 				uint32_t a = ( base + ( ( x * width / scrwidth ) << 2 ) ) & ATW_VRAM_MASK;
-				dst[x] = AtwDirB[pAtwVram[a]]
+				dst[x] = AtwDirR[pAtwVram[a]]
 				       | AtwDirG[pAtwVram[( a + 1 ) & ATW_VRAM_MASK]]
-				       | AtwDirR[pAtwVram[( a + 2 ) & ATW_VRAM_MASK]];
+				       | AtwDirB[pAtwVram[( a + 2 ) & ATW_VRAM_MASK]];
 			}
 			break;
 		}
