@@ -1502,10 +1502,13 @@ static const dbgcommand_t cpucommands[] =
 	{ DebugCpu_MemDump, Symbols_MatchCpuDataAddress,
 	  "memdump", "m",
 	  "dump memory",
-	  "[b|w|l] [<start address>[-<end address>| <count>]]\n"
+	  "[b|w|l|s|u] [<start address>[-<end address>| <count>]]\n"
 	  "\tdump memory at address or continue dump from previous address.\n"
 	  "\tBy default memory output is done as bytes, with 'w' or 'l'\n"
-	  "\toption, it will be done as words/longs instead.  Output amount\n"
+	  "\toption, it will be done as words/longs instead.  With 's' or\n"
+	  "\t'u' the address is a logical one, read (as bytes) through the\n"
+	  "\t68030 MMU as supervisor or user data (physical memory while\n"
+	  "\tthe MMU is not translating).  Output amount\n"
 	  "\tcan be given either as a count or an address range.",
 	  false },
 	{ DebugCpu_Struct, Symbols_MatchCpuDataAddress,

@@ -372,6 +372,12 @@ uae_u32 debug_get_byte_mmu(uaecptr addr, int mode)
 {
 	int old = debug_mmu_mode;
 	uae_u32 v;
+
+	/* Without the 68030 MMU translating - another CPU, or before the
+	 * OS has enabled it, e.g. from a --parse file at startup - logical
+	 * addresses are physical ones, and the MMU code must not be run */
+	if (currprefs.mmu_model != 68030 || !(tc_030 & 0x80000000))
+		return STMemory_ReadByte(addr);
 	debug_mmu_mode = mode;
 	v = get_byte_debug(addr);
 	debug_mmu_mode = old;
