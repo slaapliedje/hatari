@@ -296,9 +296,15 @@ uint8_t	ATW800_ReadByte ( uint32_t offset )
 		LOG_TRACE(TRACE_VME, "vme atw info rd $%06x val=0x%02x pc=%x\n", offset, v, M68000_GetPC());
 		return v;
 	}
-	/* The VTG registers are write-only: a read returns the video memory
-	 * underneath (measured on a V0205 card: 0xFEDFF800.. read back the
-	 * screen's own pattern), so a driver cannot read a mode back. */
+	/* The VTG registers are write-only and read back as 0 (measured on a
+	 * V0205 card at the layout's own register address, 2026-09-24).
+	 * (With the 4 MB window in the 2 MB layout, the MIRRORED copy of the
+	 * block in the upper half read video memory instead - not modelled.) */
+	if ( offset >= ATW_VTG_OFF && offset < ATW_VTG_OFF + ATW_VTG_SIZE )
+	{
+		LOG_TRACE(TRACE_VME, "vme atw vtg rd $%06x pc=%x\n", offset, M68000_GetPC());
+		return 0;
+	}
 	if ( offset >= ATW_BLIT_OFF && offset < ATW_BLIT_OFF + ATW_BLIT_SIZE )
 	{
 		/* The registers are write-only: every offset of the window
