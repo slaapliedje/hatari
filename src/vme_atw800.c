@@ -134,6 +134,12 @@ static const char AtwInfoBlock[ATW_INFO_SIZE] =
 
 static uint8_t	*pAtwVram;
 static uint16_t	AtwVtg[ATW_VTG_SIZE/2];
+/* The display start in bytes, as LATCHED: a real V0205 card picks VTG
+ * 12/13 up only when the control register goes from off to on (measured
+ * 2026-09-25: writing the start alone, or the start then the same control
+ * value, moved nothing; control 0, start, control 0x19 moved a 1024x768x8
+ * picture up 128 rows for a start of 0x20000 - so the unit is a byte). */
+static uint32_t	AtwVbase;
 static uint16_t	AtwLut[256];
 static uint8_t	AtwBlitRegs[ATW_BLIT_SIZE];
 static uint16_t	AtwMemReg;
@@ -237,6 +243,7 @@ void	ATW800_Reset ( bool bCold )
 	if ( bCold )
 	{
 		memset ( AtwVtg, 0, sizeof(AtwVtg) );
+		AtwVbase = 0;
 		memset ( AtwLut, 0, sizeof(AtwLut) );
 		AtwMemReg = 0;
 		AtwUpdateSize ();
@@ -353,6 +360,16 @@ void	ATW800_WriteByte ( uint32_t offset, uint8_t val )
 			*pw = ( *pw & 0x00ff ) | ( val << 8 );
 		if ( reg == VTG_MEM_REG )
 			AtwUpdateSize ();
+		if ( reg == VTG_CTRL && ( offset & 1 ) )
+		{
+			static bool bWasOn;
+			bool bOn = ( AtwVtg[VTG_CTRL] & VTG_CTRL_ENABLE ) != 0;
+
+			if ( bOn && !bWasOn )
+				AtwVbase = ( (uint32_t)( AtwVtg[VTG_VMEM_HI] & 0x7f ) << 16 )
+				           | AtwVtg[VTG_VMEM_LO];
+			bWasOn = bOn;
+		}
 		LOG_TRACE(TRACE_VME, "vme atw vtg wr $%06x val=0x%02x pc=%x\n", offset, val, M68000_GetPC());
 		if ( reg == VTG_CTRL && ( offset & 1 ) )
 			LOG_TRACE(TRACE_VME, "vme atw vtg ctrl=0x%04x %dx%d depth=%d pc=%x\n",
@@ -454,12 +471,7 @@ void	ATW800_Render ( void )
 	width  = AtwVtg[VTG_HDI];
 	height = AtwVtg[VTG_VDI];
 	depth  = VTG_CTRL_DEPTH ( AtwVtg[VTG_CTRL] );
-	vbase  = ( (uint32_t)( AtwVtg[VTG_VMEM_HI] & 0x7f ) << 16 ) | AtwVtg[VTG_VMEM_LO];
-	/* A start of 1 does NOT move the picture on a real V0205 card (32 bpp
-	 * test pattern, 2026-09-24): the low bits are ignored, or the unit
-	 * is a 32-bit word. Which one is not measured yet; ignoring the low
-	 * two bits is right for either as long as the start is below 4. */
-	vbase &= ~3u;
+	vbase  = AtwVbase;
 
 	if ( width > 2048 )	width = 2048;
 	if ( height > 1200 )	height = 1200;
@@ -548,6 +560,7 @@ void	ATW800_MemorySnapShot_Capture ( bool bSave )
 	MemorySnapShot_Store(&AtwLut, sizeof(AtwLut));
 	MemorySnapShot_Store(&AtwBlitRegs, sizeof(AtwBlitRegs));
 	MemorySnapShot_Store(&AtwMemReg, sizeof(AtwMemReg));
+	MemorySnapShot_Store(&AtwVbase, sizeof(AtwVbase));
 	MemorySnapShot_Store(&bAllocated, sizeof(bAllocated));
 
 	if ( bAllocated )
