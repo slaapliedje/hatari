@@ -499,23 +499,11 @@ static struct tm* getFrozenTime(void)
  * If NVRAM data mode bit is set, returns given value,
  * otherwise returns it as BCD.
  */
-/**
- * Encode a clock value as reg B's data-mode bit asks: BCD (default) or binary.
- */
-static uint8_t clockval(uint8_t value);
-
 static uint8_t bin2BCD(uint8_t value)
 {
 	if ((nvram[11] & REG_BIT_DM))
 		return value;
 	return ((value / 10) << 4) | (value % 10);
-}
-
-static uint8_t clockval(uint8_t value)
-{
-	if (nvram[11] & REG_BIT_DM)
-		return value;
-	return bin2BCD(value);
 }
 
 
@@ -532,13 +520,13 @@ void NvRam_Data_ReadByte(void)
 	case 1: /* alarm seconds */
 	case 3:	/* alarm minutes */
 	case 5: /* alarm hour */
-		value = clockval(nvram[nvram_index]);
+		value = bin2BCD(nvram[nvram_index]);
 		break;
 	case 0:
-		value = clockval(getFrozenTime()->tm_sec);
+		value = bin2BCD(getFrozenTime()->tm_sec);
 		break;
 	case 2:
-		value = clockval(getFrozenTime()->tm_min);
+		value = bin2BCD(getFrozenTime()->tm_min);
 		break;
 	case 4:
 		value = getFrozenTime()->tm_hour;
@@ -548,22 +536,22 @@ void NvRam_Data_ReadByte(void)
 			value = value % 12;
 			if (value == 0)
 				value = 12;
-			value = clockval(value) | pmflag;
+			value = bin2BCD(value) | pmflag;
 		}
 		else
-			value = clockval(value);
+			value = bin2BCD(value);
 		break;
 	case 6:
-		value = clockval(getFrozenTime()->tm_wday + 1);
+		value = bin2BCD(getFrozenTime()->tm_wday + 1);
 		break;
 	case 7:
-		value = clockval(getFrozenTime()->tm_mday);
+		value = bin2BCD(getFrozenTime()->tm_mday);
 		break;
 	case 8:
-		value = clockval(getFrozenTime()->tm_mon + 1);
+		value = bin2BCD(getFrozenTime()->tm_mon + 1);
 		break;
 	case 9:
-		value = clockval(getFrozenTime()->tm_year - year_offset);
+		value = bin2BCD(getFrozenTime()->tm_year - year_offset);
 		break;
 	case 10:
 		/* control reg A
