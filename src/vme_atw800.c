@@ -8,11 +8,21 @@
 
   The ATW800/2 (geekdot.com, "The Transputer Gentlemen") is an FPGA
   graphics + Transputer card for the Mega ST bus and the MegaSTE/TT VME
-  bus. Only the graphics half ("Seurat") is emulated here; the Transputer
-  link interfaces respond as "nothing connected". The register model
+  bus. The graphics half ("Seurat") and the FPGA's own transputer, a
+  T425 (t425.c), are emulated here; the physical C011 link of the "+T"
+  model answers "nothing connected". The register model
   follows the ATW800/2 Programmer's Manual V1.0a (memory map p.5, VTG and
   LUT pp.6-7 and 12-14, including its set_adr() / set_fpga() example
   sources) plus a register probe of a real 2MB card.
+
+  The T425 sees (the Helios X server's newatw.c, its memory map of
+  21.10.2024): its RAM from 0x80000000 (4 KB on chip, then external
+  memory), the card's video memory at 0x80600000, the transputer's own
+  LUT at 0x40000000 (a word per entry, RGB565 in the low half, chosen by
+  VTG control bit 6), the FPGA info string at 0x40000400 and the VTG
+  registers at 0x40001000 (a word per register). Its link 0 is the FPGA
+  link below; links 1-3 lead nowhere (on a real card link 3 can reach
+  the TRAM slots).
 
   Model: a 2 MB card with the ADDR jumper at 0x(FE)A00000 — the variant
   measured on real hardware. All FPGA structures live at the TOP of the
@@ -35,8 +45,11 @@
                          reads back the status word, bit 0 = busy (the
                          real engine is asynchronous; ~38 MB/s copy).
                          Emulated blits complete at once, status 0.
-    +0x1FFAC0  FPGA link virtual Transputer C011 interface: status reads
-                         return 0 = no data / not ready
+    +0x1FFAC0  FPGA link the T425's link 0, laid out like a C011, a byte
+                         register in the low byte of each word: +0x01
+                         input data, +0x03 output data, +0x05 input
+                         status, +0x07 output status (bit 0: ready),
+                         +0x11 reset (write) / error (read), +0x17 analyse
 
   A 2 MB card decodes ONLY its 2 MB window: the 4 MB-offset probes of
   set_adr() (e.g. 0xDFF218 on a MegaSTE) fall outside and must BUS ERROR
@@ -63,12 +76,16 @@ const char VmeAtw800_fileid[] = "Hatari vme_atw800.c";
 
 #include "main.h"
 #include "configuration.h"
+#include "clocks_timings.h"
 #include "conv_gen.h"
+#include "cycles.h"
+#include "cycInt.h"
 #include "log.h"
 #include "m68000.h"
 #include "memorySnapShot.h"
 #include "screen.h"
 #include "statusbar.h"
+#include "t425.h"
 #include "vme_atw800.h"
 
 /*
@@ -127,10 +144,11 @@ const char VmeAtw800_fileid[] = "Hatari vme_atw800.c";
 /* 32-byte FPGA info block. The long at byte 24 must read " cpm"
  * (0x2063706D), as on a real card (the manual's "_cpm" comment is
  * wrong, its own question mark was earned).
- * The rest imitates the real block's "build date, version and
- * copyright" content. */
+ * The rest is a real V0205 card's (read on the TT, 2026-09-24): the
+ * card's FPGABIOS.PRG, which the transputer tools need, looks at its
+ * first byte and refuses a card whose block does not start with 'V'. */
 static const char AtwInfoBlock[ATW_INFO_SIZE] =
-	"Seurat v0106 Hatari.\0\0\0\0 cpm\0\0\0";
+	"V0205 build 20251025 (c) cpm 202";
 
 static uint8_t	*pAtwVram;
 static uint16_t	AtwVtg[ATW_VTG_SIZE/2];
@@ -145,10 +163,31 @@ static uint8_t	AtwBlitRegs[ATW_BLIT_SIZE];
 static uint16_t	AtwMemReg;
 static uint32_t	AtwSize = 0x200000;		/* current layout, from AtwMemReg */
 
+/*
+ * The FPGA's T425: 5 MB of RAM and 40 MHz, as the card's companion disk
+ * says rspy -m finds it (and Helios's host.con sets up 5 MB). The video
+ * memory follows at 0x80600000. (An RSA-2048 public operation in lmul
+ * code took 0.28 s on a real card against 0.77 s on a 20 MHz T800: the
+ * FPGA may do some instructions in fewer cycles than the data sheet's.)
+ */
+#define ATW_T425_RAM	0x500000
+#define ATW_T425_VRAM	0x80600000u
+#define ATW_T425_MHZ	40
+#define ATW_T425_PERIOD	1024		/* CPU cycles between catch-ups */
+
+static uint16_t	AtwLutT[256];			/* the transputer's LUT */
+static uint64_t	AtwT425Clock;			/* the CPU cycle it has run up to */
+static uint64_t	AtwT425Frac;
+static uint8_t	AtwLinkData;			/* the C011's input data register */
+static uint8_t	AtwLinkIntEn[2];		/* its interrupt enables (not wired) */
+static bool	bAtwT425;
+
 static void AtwUpdateSize ( void )
 {
 	AtwSize = ( ConfigureParams.System.nVMEVram == 4 && ( AtwMemReg & 2 ) )
 	          ? 0x400000 : 0x200000;
+	if ( bAtwT425 )
+		T425_SetShared ( pAtwVram, ATW_T425_VRAM, AtwSize );
 }
 
 static uint32_t	AtwHostPal[256];		/* LUT -> host pixels */
@@ -212,6 +251,159 @@ static void ATW800_DoBlit ( void )
 }
 
 static bool	bAtwPalDirty;
+static bool	bAtwVtgWasOn;
+
+/* A VTG register changed: the memory layout, the latched display start
+ * and the LUT in use follow it */
+static void AtwVtgChanged ( int reg )
+{
+	if ( reg == VTG_MEM_REG )
+		AtwUpdateSize ();
+	if ( reg == VTG_CTRL )
+	{
+		bool bOn = ( AtwVtg[VTG_CTRL] & VTG_CTRL_ENABLE ) != 0;
+
+		if ( bOn && !bAtwVtgWasOn )
+			AtwVbase = ( (uint32_t)( AtwVtg[VTG_VMEM_HI] & 0x7f ) << 16 )
+			           | AtwVtg[VTG_VMEM_LO];
+		bAtwVtgWasOn = bOn;
+		bAtwPalDirty = true;		/* bit 6 picks the LUT */
+		LOG_TRACE(TRACE_VME, "vme atw vtg ctrl=0x%04x %dx%d depth=%d pc=%x\n",
+		          AtwVtg[VTG_CTRL], AtwVtg[VTG_HDI], AtwVtg[VTG_VDI],
+		          VTG_CTRL_DEPTH(AtwVtg[VTG_CTRL]), M68000_GetPC());
+	}
+}
+
+
+/* ---- the T425's side of the card ---- */
+
+static void AtwT425Log ( const char *msg )
+{
+	Log_Printf ( LOG_DEBUG, "%s", msg );
+}
+
+static uint32_t AtwT425Read ( uint32_t addr, int size )
+{
+	uint32_t off = addr - 0x40000000u, w;
+
+	if ( off < 0x400 )
+		w = AtwLutT[off >> 2];
+	else if ( off - 0x400 < ATW_INFO_SIZE )
+	{
+		const uint8_t *p = (const uint8_t *)AtwInfoBlock + ( ( off - 0x400 ) & ~3u );
+		w = p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24;
+	}
+	else if ( off - 0x1000 < ATW_VTG_SIZE * 2 )
+	{
+		int reg = ( off - 0x1000 ) >> 2;
+		w = reg == VTG_MEM_REG ? AtwMemReg : AtwVtg[reg];
+	}
+	else
+	{
+		LOG_TRACE(TRACE_VME, "vme atw t425 rd $%08x: nothing there\n", addr);
+		return 0;
+	}
+	return size == 4 ? w : ( w >> ( 8 * ( addr & 3 ) ) ) & 0xff;
+}
+
+static void AtwT425Write ( uint32_t addr, uint32_t val, int size )
+{
+	uint32_t off = addr - 0x40000000u;
+	uint16_t *pw;
+	int sh = 8 * ( addr & 3 );
+
+	if ( off < 0x400 )
+		pw = &AtwLutT[off >> 2];
+	else if ( off - 0x1000 < ATW_VTG_SIZE * 2 )
+	{
+		int reg = ( off - 0x1000 ) >> 2;
+		pw = reg == VTG_MEM_REG ? &AtwMemReg : &AtwVtg[reg];
+	}
+	else
+	{
+		LOG_TRACE(TRACE_VME, "vme atw t425 wr $%08x val=0x%x: nothing there\n", addr, val);
+		return;
+	}
+	if ( size == 4 )
+		*pw = val;
+	else if ( sh < 16 )
+		*pw = ( *pw & ~( 0xff << sh ) ) | ( ( val & 0xff ) << sh );
+	if ( off < 0x400 )
+		bAtwPalDirty = true;
+	else
+		AtwVtgChanged ( ( off - 0x1000 ) >> 2 );
+}
+
+/* Run the T425 up to the CPU's present */
+static void AtwT425Sync ( void )
+{
+	uint64_t now = Cycles_GetClockCounterImmediate ();
+	uint64_t d, n;
+
+	if ( !bAtwT425 || now <= AtwT425Clock )
+		return;
+	d = now - AtwT425Clock;
+	AtwT425Clock = now;
+	if ( d > MachineClocks.CPU_Freq_Emul )		/* at most a second */
+		d = MachineClocks.CPU_Freq_Emul;
+	n = d * ( ATW_T425_MHZ * 1000000ULL ) + AtwT425Frac;
+	AtwT425Frac = n % MachineClocks.CPU_Freq_Emul;
+	T425_Run ( n / MachineClocks.CPU_Freq_Emul );
+}
+
+void	ATW800_T425_InterruptHandler ( void )
+{
+	CycInt_AcknowledgeInterrupt ();
+	AtwT425Sync ();
+	CycInt_AddRelativeInterrupt ( ATW_T425_PERIOD, INT_CPU_CYCLE, INTERRUPT_VME_T425 );
+}
+
+/* The FPGA link's registers (offsets in the link window) */
+static uint8_t AtwLinkRead ( int reg )
+{
+	AtwT425Sync ();
+	switch ( reg )
+	{
+	 case 0x01:	/* input data: reading takes the byte */
+		if ( T425_LinkCanRead ( 0 ) )
+		{
+			AtwLinkData = T425_LinkRead ( 0 );
+			LOG_TRACE(TRACE_VME, "vme atw link in 0x%02x\n", AtwLinkData);
+		}
+		return AtwLinkData;
+	 case 0x05:	/* input status */
+		return ( T425_LinkCanRead ( 0 ) ? 1 : 0 ) | AtwLinkIntEn[0] << 1;
+	 case 0x07:	/* output status */
+		return ( T425_LinkCanWrite ( 0 ) ? 1 : 0 ) | AtwLinkIntEn[1] << 1;
+	 case 0x11:	/* error */
+		return T425_Error () ? 1 : 0;
+	}
+	return 0;
+}
+
+static void AtwLinkWrite ( int reg, uint8_t val )
+{
+	AtwT425Sync ();
+	switch ( reg )
+	{
+	 case 0x03:	/* output data */
+		LOG_TRACE(TRACE_VME, "vme atw link out 0x%02x%s\n", val,
+		          T425_LinkCanWrite ( 0 ) ? "" : " (not ready: lost)");
+		T425_LinkWrite ( 0, val );
+		break;
+	 case 0x05:
+	 case 0x07:	/* interrupt enables */
+		AtwLinkIntEn[( reg - 5 ) / 2] = ( val >> 1 ) & 1;
+		break;
+	 case 0x11:
+		LOG_TRACE(TRACE_VME, "vme atw link reset %d pc=%x\n", val & 1, M68000_GetPC());
+		T425_SetReset ( val & 1 );
+		break;
+	 case 0x17:
+		T425_SetAnalyse ( val & 1 );
+		break;
+	}
+}
 
 
 void	ATW800_Init ( void )
@@ -223,6 +415,15 @@ void	ATW800_Init ( void )
 			Main_ErrorExit ( "Out of memory (ATW800/2 video memory)", NULL, 1 );
 		memset ( pAtwVram, 0, ATW_VRAM_ALLOC );
 	}
+	if ( !bAtwT425 )
+	{
+		t425_bus_t bus = { AtwT425Read, AtwT425Write, AtwT425Log };
+
+		if ( !T425_Init ( ATW_T425_RAM, ATW_T425_MHZ, &bus ) )
+			Main_ErrorExit ( "Out of memory (ATW800/2 transputer)", NULL, 1 );
+		T425_SetTrace ( getenv ( "HATARI_T425_TRACE" ) != NULL );
+		bAtwT425 = true;
+	}
 	AtwUpdateSize ();
 	bAtwPalDirty = true;
 }
@@ -230,6 +431,9 @@ void	ATW800_Init ( void )
 
 void	ATW800_UnInit ( void )
 {
+	if ( bAtwT425 )
+		T425_UnInit ();
+	bAtwT425 = false;
 	free ( pAtwVram );
 	pAtwVram = NULL;
 }
@@ -238,19 +442,35 @@ void	ATW800_UnInit ( void )
 void	ATW800_Reset ( bool bCold )
 {
 	/* The FPGA keeps running across an Atari warm reset (a frozen
-	 * picture survives it); only a cold
-	 * boot clears the mode. */
+	 * picture survives it, and so does a program on the T425); only a
+	 * cold boot clears the mode and resets the transputer. */
 	if ( bCold )
 	{
 		memset ( AtwVtg, 0, sizeof(AtwVtg) );
 		AtwVbase = 0;
+		bAtwVtgWasOn = false;
 		memset ( AtwLut, 0, sizeof(AtwLut) );
+		memset ( AtwLutT, 0, sizeof(AtwLutT) );
 		AtwMemReg = 0;
 		AtwUpdateSize ();
 		if ( pAtwVram )
 			memset ( pAtwVram, 0, ATW_VRAM_ALLOC );
 		bAtwPalDirty = true;
+		if ( bAtwT425 )
+		{
+			uint32_t size;
+			uint8_t *ram = T425_Ram ( &size );
+
+			memset ( ram, 0, size );
+			T425_SetAnalyse ( false );
+			T425_SetReset ( true );
+			T425_SetReset ( false );
+		}
 	}
+	/* CycInt_Reset() has just dropped the catch-up timer */
+	AtwT425Clock = Cycles_GetClockCounterImmediate ();
+	if ( bAtwT425 )
+		CycInt_AddRelativeInterrupt ( ATW_T425_PERIOD, INT_CPU_CYCLE, INTERRUPT_VME_T425 );
 }
 
 
@@ -321,10 +541,7 @@ uint8_t	ATW800_ReadByte ( uint32_t offset )
 		return 0;
 	}
 	if ( offset >= ATW_LINK_OFF && offset < ATW_LINK_OFF + ATW_LINK_SIZE )
-	{
-		LOG_TRACE(TRACE_VME, "vme atw link rd $%06x pc=%x\n", offset, M68000_GetPC());
-		return 0;				/* no Transputer: no data, not ready */
-	}
+		return AtwLinkRead ( offset - ATW_LINK_OFF );
 	return pAtwVram[ offset & ATW_VRAM_MASK ];
 }
 
@@ -358,23 +575,10 @@ void	ATW800_WriteByte ( uint32_t offset, uint8_t val )
 			*pw = ( *pw & 0xff00 ) | val;
 		else
 			*pw = ( *pw & 0x00ff ) | ( val << 8 );
-		if ( reg == VTG_MEM_REG )
-			AtwUpdateSize ();
-		if ( reg == VTG_CTRL && ( offset & 1 ) )
-		{
-			static bool bWasOn;
-			bool bOn = ( AtwVtg[VTG_CTRL] & VTG_CTRL_ENABLE ) != 0;
-
-			if ( bOn && !bWasOn )
-				AtwVbase = ( (uint32_t)( AtwVtg[VTG_VMEM_HI] & 0x7f ) << 16 )
-				           | AtwVtg[VTG_VMEM_LO];
-			bWasOn = bOn;
-		}
 		LOG_TRACE(TRACE_VME, "vme atw vtg wr $%06x val=0x%02x pc=%x\n", offset, val, M68000_GetPC());
-		if ( reg == VTG_CTRL && ( offset & 1 ) )
-			LOG_TRACE(TRACE_VME, "vme atw vtg ctrl=0x%04x %dx%d depth=%d pc=%x\n",
-			          AtwVtg[VTG_CTRL], AtwVtg[VTG_HDI], AtwVtg[VTG_VDI],
-			          VTG_CTRL_DEPTH(AtwVtg[VTG_CTRL]), M68000_GetPC());
+		/* the control register acts once its low byte is in */
+		if ( reg != VTG_CTRL || ( offset & 1 ) )
+			AtwVtgChanged ( reg );
 		return;
 	}
 	if ( offset >= ATW_BLIT_OFF && offset < ATW_BLIT_OFF + ATW_BLIT_SIZE )
@@ -388,7 +592,7 @@ void	ATW800_WriteByte ( uint32_t offset, uint8_t val )
 	}
 	if ( offset >= ATW_LINK_OFF && offset < ATW_LINK_OFF + ATW_LINK_SIZE )
 	{
-		LOG_TRACE(TRACE_VME, "vme atw link wr $%06x val=0x%02x pc=%x\n", offset, val, M68000_GetPC());
+		AtwLinkWrite ( offset - ATW_LINK_OFF, val );
 		return;
 	}
 	pAtwVram[ offset & ATW_VRAM_MASK ] = val;
@@ -397,15 +601,17 @@ void	ATW800_WriteByte ( uint32_t offset, uint8_t val )
 
 /**
  * LUT entry format measured on the real card: RGB565 in a big-endian
- * word (measured).
+ * word (measured). VTG control bit 6 shows the transputer's LUT instead
+ * (the same RGB565, in the low half of a little-endian word).
  */
 static void ATW800_RecalcHostPalette ( void )
 {
+	const uint16_t *lut = ( AtwVtg[VTG_CTRL] & 0x40 ) ? AtwLutT : AtwLut;
 	int i;
 
 	for ( i = 0 ; i < 256 ; i++ )
 	{
-		uint16_t w = AtwLut[i];
+		uint16_t w = lut[i];
 		uint8_t r = ( ( w >> 11 ) & 0x1f ) << 3;
 		uint8_t g = ( ( w >> 5 ) & 0x3f ) << 2;
 		uint8_t b = ( w & 0x1f ) << 3;
@@ -570,6 +776,22 @@ void	ATW800_MemorySnapShot_Capture ( bool bSave )
 		MemorySnapShot_Store(pAtwVram, ATW_VRAM_ALLOC);
 	}
 
+	/* the T425 */
+	MemorySnapShot_Store(&AtwLutT, sizeof(AtwLutT));
+	MemorySnapShot_Store(&AtwT425Clock, sizeof(AtwT425Clock));
+	MemorySnapShot_Store(&AtwT425Frac, sizeof(AtwT425Frac));
+	MemorySnapShot_Store(&AtwLinkData, sizeof(AtwLinkData));
+	MemorySnapShot_Store(&AtwLinkIntEn, sizeof(AtwLinkIntEn));
+	MemorySnapShot_Store(&bAtwVtgWasOn, sizeof(bAtwVtgWasOn));
+	if ( bAllocated && bAtwT425 )
+	{
+		uint32_t size;
+		uint8_t *ram = T425_Ram ( &size );
+
+		MemorySnapShot_Store(T425_State(), T425_StateSize());
+		MemorySnapShot_Store(ram, size);
+	}
+
 	if ( !bSave )
 	{
 		AtwUpdateSize ();
@@ -577,6 +799,13 @@ void	ATW800_MemorySnapShot_Capture ( bool bSave )
 	}
 }
 
+
+static FILE *AtwInfoFp;
+
+static void AtwInfoLine ( const char *line )
+{
+	fputs ( line, AtwInfoFp );
+}
 
 void	ATW800_Info ( FILE *fp, uint32_t arg )
 {
@@ -586,5 +815,12 @@ void	ATW800_Info ( FILE *fp, uint32_t arg )
 	        AtwVtg[VTG_HDI], AtwVtg[VTG_VDI], VTG_CTRL_DEPTH(AtwVtg[VTG_CTRL]),
 	        ( (uint32_t)( AtwVtg[VTG_VMEM_HI] & 0x7f ) << 16 ) | AtwVtg[VTG_VMEM_LO],
 	        AtwMemReg);
-	fprintf(fp, "  card screen: %s\n", ATW800_UseCardScreen() ? "active" : "inactive");
+	fprintf(fp, "  card screen: %s, LUT: %s\n", ATW800_UseCardScreen() ? "active" : "inactive",
+	        ( AtwVtg[VTG_CTRL] & 0x40 ) ? "transputer's" : "Atari's");
+	if ( bAtwT425 )
+	{
+		AtwT425Sync ();
+		AtwInfoFp = fp;
+		T425_Info ( AtwInfoLine );
+	}
 }

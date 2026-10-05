@@ -23,6 +23,8 @@ extern void ATW800_WriteByte(uint32_t offset, uint8_t val);
 extern bool ATW800_UseCardScreen(void);
 extern void ATW800_Render(void);
 
+extern void ATW800_T425_InterruptHandler(void);
+
 extern void ATW800_MemorySnapShot_Capture(bool bSave);
 extern void ATW800_Info(FILE *fp, uint32_t arg);
 
