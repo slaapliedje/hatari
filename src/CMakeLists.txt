@@ -57,6 +57,7 @@ set(SOURCES
 	scu_vme.c
 	video_et4000.c
 	vme_atw800.c
+	t425.c
 	vme_nova.c
 	xbus.c
 	shortcut.c
