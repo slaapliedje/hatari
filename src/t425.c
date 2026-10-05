@@ -47,6 +47,7 @@
 #define INTSAVE_B	0x80000038u
 #define INTSAVE_C	0x8000003Cu
 #define INTSAVE_ST	0x80000040u
+#define INTSAVE_E	0x80000044u
 #define DEVICE_ID	2		/* what the FPGA's lddevid answers */
 
 /* Workspace slots below Wptr, in bytes */
@@ -76,6 +77,8 @@ typedef struct
 typedef struct
 {
 	uint32_t A, B, C, O, I, W;	/* W: Wptr, word aligned */
+	uint32_t D, E, S;		/* inner registers, seen by the test
+					 * instructions (Helios uses them) */
 	int pri;			/* 0: high, 1: low */
 	uint8_t running;		/* a current process (else idle) */
 	uint8_t interrupted;		/* a low priority process is saved */
@@ -153,8 +156,21 @@ static void wr32_slow(uint32_t a, uint32_t v)
 	{
 		Shm[o] = v; Shm[o+1] = v >> 8; Shm[o+2] = v >> 16; Shm[o+3] = v >> 24;
 	}
-	else if (Bus.write)
-		Bus.write(a, v, 4);
+	else
+	{
+#ifdef T425_HISTORY
+		static bool dumped;
+
+		if (( a >> 28 ) != 4 && !dumped)
+		{
+			dumped = true;
+			tlog("t425: write to %08x, nothing there\n", a);
+			history_dump();
+		}
+#endif
+		if (Bus.write)
+			Bus.write(a, v, 4);
+	}
 }
 
 #ifdef T425_HISTORY
@@ -200,18 +216,40 @@ static inline void wr8(uint32_t a, uint8_t v)
 		Ram[o] = v;
 	else if (Shm && ( o = a - ShmBase ) < ShmSize)
 		Shm[o] = v;
-	else if (Bus.write)
-		Bus.write(a, v, 1);
+	else
+	{
+#ifdef T425_HISTORY
+		static bool dumped;
+
+		if (( a >> 28 ) != 4 && !dumped)
+		{
+			dumped = true;
+			tlog("t425: byte write to %08x, nothing there\n", a);
+			history_dump();
+		}
+#endif
+		if (Bus.write)
+			Bus.write(a, v, 1);
+	}
 }
 
-/* A block move (move, messages): a byte at a time, from the start */
+/* A block move (move, messages), from the start: a move to just above
+ * its source repeats the first bytes, which programs use to fill memory */
 static void copy(uint32_t dst, uint32_t src, uint32_t n)
 {
 	uint32_t d = dst - MINT, s = src - MINT;
 
 	if (d < RamSize && s < RamSize && n <= RamSize - d && n <= RamSize - s)
 	{
-		memmove(Ram + d, Ram + s, n);
+		if (d <= s || d - s >= n)
+			memmove(Ram + d, Ram + s, n);
+		else
+		{
+			uint8_t *p = Ram + d, *q = Ram + s;
+
+			while (n--)
+				*p++ = *q++;
+		}
 		return;
 	}
 	while (n--)
@@ -269,6 +307,7 @@ static void interrupt_low(void)
 	wr32(INTSAVE_B, T.B);
 	wr32(INTSAVE_C, T.C);
 	wr32(INTSAVE_ST, status());
+	wr32(INTSAVE_E, T.E);
 	T.interrupted = 1;
 	T.running = 0;
 }
@@ -288,6 +327,7 @@ static bool pick(void)
 		T.A = rd32(INTSAVE_A);
 		T.B = rd32(INTSAVE_B);
 		T.C = rd32(INTSAVE_C);
+		T.E = rd32(INTSAVE_E);
 		T.error = st & 1;
 		T.haltOnError = ( st >> 1 ) & 1;
 		T.interrupted = 0;
@@ -673,6 +713,9 @@ static void crc(int bits)
 static void bad(uint32_t op)
 {
 	tlog("t425: no instruction opr #%x at %08x: halted\n", op, T.I);
+#ifdef T425_HISTORY
+	history_dump();
+#endif
 	T.halted = 1;
 	T.haltI = T.I;
 	T.haltW = T.W | T.pri;
@@ -869,6 +912,24 @@ static void operate(uint32_t op)
 	case 0x22:	/* ldtimer */
 		push(T.Clock[T.pri]);
 		T.cyc += 1;
+		break;
+	case 0x23:	/* testlds */
+		push(T.S);
+		break;
+	case 0x24:	/* testlde */
+		push(T.E);
+		break;
+	case 0x25:	/* testldd */
+		push(T.D);
+		break;
+	case 0x26:	/* teststs */
+		T.S = T.A; pop();
+		break;
+	case 0x27:	/* testste */
+		T.E = T.A; pop();
+		break;
+	case 0x28:	/* teststd */
+		T.D = T.A; pop();
 		break;
 	case 0x29:	/* testerr */
 		push(T.error ? 0 : 1);
@@ -1081,9 +1142,12 @@ static void operate(uint32_t op)
 			wr32(T.W + S_STATE, READY);
 		T.cyc += 2;
 		break;
-	case 0x4A:	/* move: A = length, B = to, C = from */
-		copy(T.B, T.C, T.A);
-		T.cyc += 7 + ( T.A + 3 ) / 2;
+	case 0x4A:	/* move: A = length, B = to, C = from (no length: nothing) */
+		if ((int32_t)T.A > 0)
+		{
+			copy(T.B, T.C, T.A);
+			T.cyc += 7 + ( T.A + 3 ) / 2;
+		}
 		break;
 	case 0x4B:	/* or */
 		T.A |= T.B; T.B = T.C;
