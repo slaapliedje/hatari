@@ -64,6 +64,7 @@ typedef int hn_socket;
 #else
 #include <poll.h>
 #include <time.h>
+#include <signal.h>
 #include <arpa/inet.h>
 #endif
 #endif
@@ -504,6 +505,13 @@ static bool slirp_open(hostnet_t *net, const char *opts,
 		Log_Printf(LOG_ERROR, "Network (slirp): initialisation failed\n");
 		return false;
 	}
+#ifndef _WIN32
+	/* libslirp writes to its host sockets with a plain send() and leaves
+	 * SIGPIPE to the program (QEMU ignores it): when the far end of a
+	 * forwarded connection has gone, the write must fail with EPIPE, not
+	 * kill the emulator */
+	signal(SIGPIPE, SIG_IGN);
+#endif
 	{
 		int i;
 
