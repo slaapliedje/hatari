@@ -203,6 +203,9 @@ typedef enum {
 	OPT_VMEBASE,
 	OPT_VMEVRAM,
 	OPT_XBUS,
+	OPT_USB,
+	OPT_USBDISK,
+	OPT_USBINPUT,
 	OPT_RTC_YEAR,
 	OPT_TIMERD,
 	OPT_FASTBOOT,
@@ -512,6 +515,12 @@ static const opt_t HatariOptions[] = {
 	  "<int>", "ATW800/2 video memory in MB (2 or 4)" },
 	{ OPT_XBUS,      NULL, "--xbus",
 	  "<x>", "ISA (0xFC) / VME32 (0xFD) windows (x = none/trace, 32-bit addressing)" },
+	{ OPT_USB,       NULL, "--usb",
+	  "<x>", "USB host controller card (x = none/lightning, MegaSTE/TT only)" },
+	{ OPT_USBDISK,   NULL, "--usb-disk",
+	  "<file>", "A USB stick on the card's port 1, from this disk image" },
+	{ OPT_USBINPUT,  NULL, "--usb-input",
+	  "<bool>", "The keyboard and mouse as USB devices on the card's port 2 (not the IKBD)" },
 	{ OPT_RTC_YEAR,   NULL, "--rtc-year",
 	  "<int>", "Set initial year for RTC (0/1980-2079, 0=use host)" },
 	{ OPT_TIMERD,    NULL, "--timer-d",
@@ -2209,6 +2218,31 @@ bool Opt_ParseParameters(int argc, const char * const argv[], int *exitval)
 			bLoadAutoSave = false;
 			break;
 		}
+
+		case OPT_USB:
+		{
+			static const opt_keyval_t keyval[] = {
+				{"none",      USB_TYPE_NONE},
+				{"off",       USB_TYPE_NONE},
+				{"lightning", USB_TYPE_LIGHTNING},
+			};
+			if (!Opt_SetKeyVal(arg, keyval, ARRAY_SIZE(keyval), &val))
+				return Opt_ShowError(OPT_USB, arg, "Unknown USB card type");
+			ConfigureParams.Usb.nUsbType = val;
+			bLoadAutoSave = false;
+			break;
+		}
+
+		case OPT_USBDISK:
+			ok = Opt_StrCpy(OPT_USBDISK, CHECK_FILE, ConfigureParams.Usb.szDiskImage,
+					arg, sizeof(ConfigureParams.Usb.szDiskImage), NULL);
+			if (ok)
+				bLoadAutoSave = false;
+			break;
+
+		case OPT_USBINPUT:
+			ok = Opt_Bool(arg, OPT_USBINPUT, &ConfigureParams.Usb.bHostInput);
+			break;
 
 		case OPT_VME:
 		{

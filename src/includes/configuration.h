@@ -413,6 +413,19 @@ typedef enum
   XBUS_TYPE_TRACE                 /* RAM-backed, all accesses traced (xbus.c) */
 } XBUSTYPE;
 
+typedef enum
+{
+  USB_TYPE_NONE,                  /* no USB host controller */
+  USB_TYPE_LIGHTNING              /* Lightning VME: an ISP1160 in the VME A16 space (MegaSTE/TT) */
+} USBTYPE;
+
+typedef struct
+{
+  USBTYPE nUsbType;               /* the USB host controller card (vme_lightning.c) */
+  char szDiskImage[FILENAME_MAX]; /* a USB stick on port 1: its image file, or empty */
+  bool bHostInput;                /* the host's keyboard and mouse as USB devices on port 2 */
+} CNF_USB;
+
 typedef struct
 {
   int nCpuLevel;
@@ -471,6 +484,7 @@ typedef struct
   CNF_PRINTER Printer;
   CNF_MIDI Midi;
   CNF_SYSTEM System;
+  CNF_USB Usb;
   CNF_VIDEO Video;
 } CNF_PARAMS;
 

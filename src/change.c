@@ -13,6 +13,7 @@
 const char Change_fileid[] = "Hatari change.c";
 
 #include <ctype.h>
+#include <string.h>
 #include "main.h"
 #include "configuration.h"
 #include "audio.h"
@@ -178,6 +179,12 @@ bool Change_DoNeedReset(CNF_PARAMS *current, CNF_PARAMS *changed)
 
 	/* Did change VME card emulation? */
 	if (changed->System.nVMEType != current->System.nVMEType)
+		return true;
+
+	/* Did change the USB card or what is plugged into it? */
+	if (changed->Usb.nUsbType != current->Usb.nUsbType
+	    || changed->Usb.bHostInput != current->Usb.bHostInput
+	    || strcmp(changed->Usb.szDiskImage, current->Usb.szDiskImage) != 0)
 		return true;
 
 	return false;
