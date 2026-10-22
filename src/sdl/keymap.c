@@ -17,6 +17,8 @@ const char Keymap_fileid[] = "Hatari keymap.c";
 #include "keymap.h"
 #include "keymap_sdl.h"
 #include "configuration.h"
+#include "vme_lightning.h"
+#include "usb_dev.h"
 #include "file.h"
 #include "ikbd.h"
 #include "nvram.h"
@@ -829,6 +831,13 @@ void Keymap_KeyDown(SDL_Keymod modkey, SDL_Keycode symkey, SDL_Scancode scancode
 			return;
 	}
 
+	/* the keyboard as a USB device: SDL's scancodes are the HID usages */
+	if (ConfigureParams.Usb.bHostInput && Lightning_IsEnabled())
+	{
+		usb_hid_key(scancode, true);
+		return;
+	}
+
 	if (!(modkey & KMOD_SHIFT))
 	{
 		/* If using joystick emulation via keyboard, DON'T send keys to
@@ -871,6 +880,12 @@ void Keymap_KeyUp(SDL_Keymod modkey, SDL_Keycode symkey, SDL_Scancode scancode)
 	{
 		if (ShortCut_CheckKeys(symkey, Keymap_IsShortCutMod(modkey), false))
 			return;
+	}
+
+	if (ConfigureParams.Usb.bHostInput && Lightning_IsEnabled())
+	{
+		usb_hid_key(scancode, false);
+		return;
 	}
 
 	if (!(modkey & KMOD_SHIFT))

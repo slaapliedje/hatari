@@ -595,6 +595,15 @@ static const struct Config_Tag configs_System[] =
 	{ NULL , Error_Tag, NULL }
 };
 
+/* Used to load/save USB options */
+static const struct Config_Tag configs_Usb[] =
+{
+	{ "nUsbType", Int_Tag, &ConfigureParams.Usb.nUsbType },
+	{ "szDiskImage", String_Tag, ConfigureParams.Usb.szDiskImage },
+	{ "bHostInput", Bool_Tag, &ConfigureParams.Usb.bHostInput },
+	{ NULL , Error_Tag, NULL }
+};
+
 /* Used to load/save video options */
 static const struct Config_Tag configs_Video[] =
 {
@@ -865,6 +874,11 @@ void Configuration_SetDefault(void)
 	ConfigureParams.System.nVMEBase = 0x00A00000;
 	ConfigureParams.System.nVMEVram = 2;
 	ConfigureParams.System.nXBusType = XBUS_TYPE_NONE;
+
+	/* Set USB defaults */
+	ConfigureParams.Usb.nUsbType = USB_TYPE_NONE;
+	ConfigureParams.Usb.szDiskImage[0] = '\0';
+	ConfigureParams.Usb.bHostInput = false;
 	ConfigureParams.System.bCompatibleCpu = true;
 	ConfigureParams.System.bBlitter = false;
 	ConfigureParams.System.bPatchTimerD = false;
@@ -1150,6 +1164,7 @@ void Configuration_Load(const char *psFileName)
 	Configuration_LoadSection(psFileName, configs_Printer, "[Printer]");
 	Configuration_LoadSection(psFileName, configs_Midi, "[Midi]");
 	Configuration_LoadSection(psFileName, configs_System, "[System]");
+	Configuration_LoadSection(psFileName, configs_Usb, "[USB]");
 	Configuration_LoadSection(psFileName, configs_Video, "[Video]");
 
 	/* Some more legacy handling: */
@@ -1213,6 +1228,7 @@ void Configuration_Save(void)
 	Configuration_SaveSection(sConfigFileName, configs_Printer, "[Printer]");
 	Configuration_SaveSection(sConfigFileName, configs_Midi, "[Midi]");
 	Configuration_SaveSection(sConfigFileName, configs_System, "[System]");
+	Configuration_SaveSection(sConfigFileName, configs_Usb, "[USB]");
 	Configuration_SaveSection(sConfigFileName, configs_Video, "[Video]");
 }
 

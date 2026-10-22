@@ -59,6 +59,11 @@ set(SOURCES
 	vme_atw800.c
 	t425.c
 	vme_nova.c
+	vme_lightning.c
+	usb_isp1160.c
+	usb_dev.c
+	usb_storage.c
+	usb_hid.c
 	xbus.c
 	shortcut.c
 	sound.c

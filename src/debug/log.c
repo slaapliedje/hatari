@@ -164,6 +164,7 @@ static flagname_t TraceFlags[] = {
 	{ TRACE_VIDEO_VBL	 , "video_vbl" },
 
 	{ TRACE_VME		 , "vme" },
+	{ TRACE_USB		 , "usb" },
 
 	{ TRACE_OS_XBIOS	 , "xbios" },
 };

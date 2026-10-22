@@ -39,6 +39,7 @@ const char VmeNova_fileid[] = "Hatari vme_nova.c";
 #include "memorySnapShot.h"
 #include "video_et4000.h"
 #include "vme_atw800.h"
+#include "vme_lightning.h"
 #include "vme_nova.h"
 
 
@@ -75,7 +76,7 @@ static uint64_t	VmeWriteCount;
 bool	VME_IsAvailable ( void )
 {
 	return ( Config_IsMachineTT() || Config_IsMachineMegaSTE() )
-	       && ( ConfigureParams.System.nVMEType != VME_TYPE_NONE );
+	       && ( ConfigureParams.System.nVMEType != VME_TYPE_NONE || Lightning_IsEnabled() );
 }
 
 
@@ -87,6 +88,9 @@ void	VME_Init ( void )
 {
 	if ( !VME_IsAvailable() )
 		return;
+	Lightning_Init ();
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_NONE )
+		return;				/* only the USB card: the rest of the bus stays bus-error */
 
 	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
 	{
@@ -126,6 +130,7 @@ void	VME_UnInit ( void )
 	pVmeA16Ram = NULL;
 	ET4000_UnInit ();
 	ATW800_UnInit ();
+	Lightning_UnInit ();
 }
 
 
@@ -140,6 +145,7 @@ void	VME_Reset ( bool bCold )
 
 	VmeReadCount = 0;
 	VmeWriteCount = 0;
+	Lightning_Reset ( bCold );
 
 	if ( ConfigureParams.System.nVMEType == VME_TYPE_ET4000 )
 		ET4000_Reset ( bCold );
@@ -237,11 +243,22 @@ static void VME_ET4000_WriteByte ( uint32_t offset, bool is_mem, uint8_t val )
  */
 uae_u32 REGPARAM3 VME_Mem_bget ( uaecptr addr )
 {
+	uint32_t LightOff;
 	uint32_t VmeAddr;
 	const char *space;
 	uint8_t *p;
 	uint8_t val;
 
+	if ( Lightning_Decode ( addr, &LightOff ) )
+	{
+		VmeReadCount++;
+		return Lightning_ReadByte ( LightOff );
+	}
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_NONE )
+	{
+		M68000_BusError ( addr, BUS_ERROR_READ, BUS_ERROR_SIZE_BYTE, BUS_ERROR_ACCESS_DATA, 0 );
+		return -1;
+	}
 	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
@@ -265,11 +282,22 @@ uae_u32 REGPARAM3 VME_Mem_bget ( uaecptr addr )
 
 uae_u32 REGPARAM3 VME_Mem_wget ( uaecptr addr )
 {
+	uint32_t LightOff;
 	uint32_t VmeAddr;
 	const char *space;
 	uint8_t *p;
 	uint16_t val;
 
+	if ( Lightning_Decode ( addr, &LightOff ) )
+	{
+		VmeReadCount++;
+		return Lightning_ReadWord ( LightOff );
+	}
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_NONE )
+	{
+		M68000_BusError ( addr, BUS_ERROR_READ, BUS_ERROR_SIZE_WORD, BUS_ERROR_ACCESS_DATA, 0 );
+		return -1;
+	}
 	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
@@ -294,11 +322,22 @@ uae_u32 REGPARAM3 VME_Mem_wget ( uaecptr addr )
 
 uae_u32 REGPARAM3 VME_Mem_lget ( uaecptr addr )
 {
+	uint32_t LightOff;
 	uint32_t VmeAddr;
 	const char *space;
 	uint8_t *p;
 	uint32_t val;
 
+	if ( Lightning_Decode ( addr, &LightOff ) )
+	{
+		VmeReadCount++;
+		return ( (uint32_t)Lightning_ReadWord ( LightOff ) << 16 ) | Lightning_ReadWord ( LightOff + 2 );
+	}
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_NONE )
+	{
+		M68000_BusError ( addr, BUS_ERROR_READ, BUS_ERROR_SIZE_LONG, BUS_ERROR_ACCESS_DATA, 0 );
+		return -1;
+	}
 	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
@@ -325,10 +364,22 @@ uae_u32 REGPARAM3 VME_Mem_lget ( uaecptr addr )
 
 void REGPARAM3 VME_Mem_bput ( uaecptr addr, uae_u32 val )
 {
+	uint32_t LightOff;
 	uint32_t VmeAddr;
 	const char *space;
 	uint8_t *p;
 
+	if ( Lightning_Decode ( addr, &LightOff ) )
+	{
+		VmeWriteCount++;
+		Lightning_WriteByte ( LightOff, val );
+		return;
+	}
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_NONE )
+	{
+		M68000_BusError ( addr, BUS_ERROR_WRITE, BUS_ERROR_SIZE_BYTE, BUS_ERROR_ACCESS_DATA, val );
+		return;
+	}
 	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
@@ -351,10 +402,22 @@ void REGPARAM3 VME_Mem_bput ( uaecptr addr, uae_u32 val )
 
 void REGPARAM3 VME_Mem_wput ( uaecptr addr, uae_u32 val )
 {
+	uint32_t LightOff;
 	uint32_t VmeAddr;
 	const char *space;
 	uint8_t *p;
 
+	if ( Lightning_Decode ( addr, &LightOff ) )
+	{
+		VmeWriteCount++;
+		Lightning_WriteWord ( LightOff, val );
+		return;
+	}
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_NONE )
+	{
+		M68000_BusError ( addr, BUS_ERROR_WRITE, BUS_ERROR_SIZE_WORD, BUS_ERROR_ACCESS_DATA, val );
+		return;
+	}
 	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
@@ -379,10 +442,23 @@ void REGPARAM3 VME_Mem_wput ( uaecptr addr, uae_u32 val )
 
 void REGPARAM3 VME_Mem_lput ( uaecptr addr, uae_u32 val )
 {
+	uint32_t LightOff;
 	uint32_t VmeAddr;
 	const char *space;
 	uint8_t *p;
 
+	if ( Lightning_Decode ( addr, &LightOff ) )
+	{
+		VmeWriteCount++;
+		Lightning_WriteWord ( LightOff, val >> 16 );
+		Lightning_WriteWord ( LightOff + 2, val );
+		return;
+	}
+	if ( ConfigureParams.System.nVMEType == VME_TYPE_NONE )
+	{
+		M68000_BusError ( addr, BUS_ERROR_WRITE, BUS_ERROR_SIZE_LONG, BUS_ERROR_ACCESS_DATA, val );
+		return;
+	}
 	if ( ConfigureParams.System.nVMEType >= VME_TYPE_ET4000 )
 	{
 		uint32_t offset;
@@ -441,6 +517,7 @@ void	VME_MemorySnapShot_Capture ( bool bSave )
 
 	ET4000_MemorySnapShot_Capture ( bSave );
 	ATW800_MemorySnapShot_Capture ( bSave );
+	Lightning_MemorySnapShot_Capture ( bSave );
 
 	if ( !bAllocated )
 		return;
@@ -495,4 +572,6 @@ void VME_Info ( FILE *fp, uint32_t arg )
 		fprintf(fp, "VME card emulation: unknown type %d\n", ConfigureParams.System.nVMEType);
 		break;
 	}
+	if ( Lightning_IsEnabled() )
+		Lightning_Info ( fp, arg );
 }
