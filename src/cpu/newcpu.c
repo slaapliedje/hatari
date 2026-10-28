@@ -10705,6 +10705,9 @@ uae_u32 get_word_030_prefetch (int o)
 	regs.db = regs.prefetch020[0];
 //if ( ( v & 0xffff ) != ( get_word(pc) & 0xffff ) )
 //  fprintf ( stderr , "prefetch mismatch pc=%x prefetch=%x != mem=%x, i-cache error ?\n" , pc , v&0xffff , get_word(pc)&0xffff );
+	// as get_word_ce030_prefetch_2() does without the MMU
+	if (currprefs.cpu_cycle_exact)
+		do_cycles_ce020_internal(2);
 	return v;
 }
 
