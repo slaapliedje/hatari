@@ -490,8 +490,10 @@ bool	ATW800_Decode ( uint32_t addr24, uint32_t *pOffset )
 	}
 	/* CPLD / C011 register block: 0xDFFA80-0xDFFAFF on the MegaSTE,
 	 * 0x(FE)FFFA80-0x(FE)FFFAFF on the TT. Mapped to pseudo-offsets
-	 * ATW_AUX_OFF+reg so the byte handlers can tell them apart. */
-	if ( ( addr24 >= 0x00DFFA80 && addr24 < 0x00DFFB00 )
+	 * ATW_AUX_OFF+reg so the byte handlers can tell them apart. On the
+	 * TT, 0x(FE)DFFAxx is A24 and answers only where the video window
+	 * covers it, as above: a 2 MB card at 0xFEA00000 bus-errors there. */
+	if ( ( !Config_IsMachineTT() && addr24 >= 0x00DFFA80 && addr24 < 0x00DFFB00 )
 	  || ( addr24 >= 0x00FFFA80 && addr24 < 0x00FFFB00 ) )
 	{
 		*pOffset = ATW_AUX_OFF | ( addr24 & 0xFF );
