@@ -1324,7 +1324,7 @@ changes that you have made.
 <h4 class="gui">The System Dialog</h4>
 
 <div class="floatimage">
-  <img src="images/system.png" width="500" height="288"
+  <img src="images/system.png" width="500" height="368"
        alt="Hatari's GUI - the system dialog" />
 </div>
 
@@ -1427,6 +1427,12 @@ changes that you have made.
  by simulating a warm reset. This is a convenient option, but some very few old
  programs rely on an unmodified boot process, so in rare cases this option has
  to be switched off to get those programs running.
+</p>
+<p>
+ The VME card option selects what is in the VME slot of a Mega-STE or TT.
+ Other machines have no VME bus and ignore it.  &quot;Trace&quot; is no real
+ card: RAM stands behind the VME windows, and the &quot;vme&quot; trace flag
+ logs what a driver does there.
 </p>
 <p>
  <em>NOTE:</em> The emulated Atari system is very very sensitive to all of

@@ -31,11 +31,13 @@ const char DlgSystem_fileid[] = "Hatari dlgSystem.c";
 #define DLGSYS_BLITTER    22
 #define DLGSYS_TIMERD     23
 #define DLGSYS_FASTBOOT   24
+#define DLGSYS_VMENONE    27
+#define DLGSYS_VMETRACE   28
 
 
 static SGOBJ systemdlg[] =
 {
-	{ SGBOX, 0, 0, 0,0, 50,18, NULL },
+	{ SGBOX, 0, 0, 0,0, 50,23, NULL },
 	{ SGTEXT, 0, 0, 18,1, 14,1, "System options" },
 
 	{ SGBOX, 0, 0, 2,3, 15,8, NULL },
@@ -65,7 +67,12 @@ static SGOBJ systemdlg[] =
 	{ SGCHECKBOX, 0, 0, 3,13, 15,1, "Patch Timer-_D" },
 	{ SGCHECKBOX, 0, 0, 3,14, 39,1, "Boot faster by _patching TOS & sysvars" },
 
-	{ SGBUTTON, SG_DEFAULT, 0, 16,16, 20,1, "Back to main menu" },
+	{ SGBOX, 0, 0, 2,16, 46,4, NULL },
+	{ SGTEXT, 0, 0, 3,16, 32,1, "VME card (Mega STE and TT only):" },
+	{ SGRADIOBUT, 0, 0, 3,18, 9,1, "N_o card" },
+	{ SGRADIOBUT, 0, 0, 14,18, 7,1, "Tra_ce" },
+
+	{ SGBUTTON, SG_DEFAULT, 0, 16,21, 20,1, "Back to main menu" },
 	{ SGSTOP, 0, 0, 0,0, 0,0, NULL }
 };
 
@@ -126,6 +133,13 @@ void DlgSystem_Main(void)
 	else
 		systemdlg[DLGSYS_FASTBOOT].state &= ~SG_SELECTED;
 
+	/* VME card */
+	for (i = DLGSYS_VMENONE; i <= DLGSYS_VMETRACE; i++)
+	{
+		systemdlg[i].state &= ~SG_SELECTED;
+	}
+	systemdlg[DLGSYS_VMENONE + ConfigureParams.System.nVMEType].state |= SG_SELECTED;
+
 	/* Show the dialog: */
 	SDLGui_DoDialog(systemdlg);
 
@@ -152,6 +166,15 @@ void DlgSystem_Main(void)
 		if (systemdlg[i].state & SG_SELECTED)
 		{
 			ConfigureParams.System.VideoTimingMode = i - DLGSYS_WSRND;
+			break;
+		}
+	}
+
+	for (i = DLGSYS_VMENONE; i <= DLGSYS_VMETRACE; i++)
+	{
+		if (systemdlg[i].state & SG_SELECTED)
+		{
+			ConfigureParams.System.nVMEType = i - DLGSYS_VMENONE;
 			break;
 		}
 	}
